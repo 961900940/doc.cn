@@ -1,0 +1,12 @@
+.DS_Store
+.idea/
+.cache/
+data/
+server/doc-system
+server/public/
+web/dist/
+web/node_modules/
+*.log
+*.local
+*.tmp
+*-副本.*
