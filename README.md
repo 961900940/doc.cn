@@ -256,6 +256,16 @@ go build -o doc-system .
 
 当前项目可以作为初始化项目推送到 Git，建议只提交源码、配置说明和文档，不提交本地运行数据。
 
+刚从 Git 拉取项目后，如果没有看到以下目录或文件，这是正常的：
+
+- `server/public/`：前端生产构建后才会生成
+- `server/doc-system`：后端编译后才会生成
+- `web/dist/`：前端执行 `npm run build` 后才会生成
+- `web/node_modules/`：前端执行 `npm install` 后才会生成
+- `data/`：服务首次启动后会按需创建，属于本地运行数据
+
+如果新拉取的项目里已经有 `data/app.db`、`data/docs/`、`data/uploads/`，说明本地运行数据可能被提交到了 Git。推广给别人使用时不建议提交这些文件，因为里面可能包含用户、密码哈希、JWT 密钥、MFA 配置、公司文档和上传附件。
+
 应该提交：
 
 - `README.md`
