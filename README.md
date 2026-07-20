@@ -82,6 +82,18 @@ SQLite + Markdown 文件 + 本地 uploads
 
 ## 如何启动
 
+### 新拉取项目后的文件状态
+
+刚从 Git 拉取项目后，通常只会看到源码、README、Makefile 和依赖清单，不会看到运行时目录和构建产物。
+
+这些文件或目录缺失是正常的：
+
+- `data/`：服务首次启动后按需创建，保存 SQLite、Markdown 正文和上传附件
+- `web/node_modules/`：执行 `npm install` 后生成
+- `web/dist/`：执行 `npm run build` 后生成
+- `server/public/`：生产构建时由 `web/dist` 复制生成
+- `server/doc-system`：执行 `go build` 后生成的后端可执行文件
+
 ### 方式一：本地开发启动
 
 启动后端：
@@ -114,6 +126,14 @@ http://localhost:5173
 
 Vite 会把 `/api` 和 `/uploads` 代理到后端 `localhost:8080`。
 
+本地开发特点：
+
+- 前端和后端分开运行
+- 浏览器访问 `http://localhost:5173`
+- 后端通过 `go run .` 临时编译并运行
+- 不会生成 `server/doc-system`
+- 适合日常开发、接口调试、页面调试
+
 ### 方式二：生产构建后启动
 
 在项目根目录执行：
@@ -129,6 +149,43 @@ DOC_ADDR=:8080 DOC_DATA_DIR=../data ./doc-system
 
 ```text
 http://localhost:8080
+```
+
+生产运行特点：
+
+- 先构建前端，再编译 Go 后端
+- 前端构建产物复制到 `server/public/`
+- 线上只运行一个 Go 服务
+- 浏览器访问 Go 服务地址，例如 `http://服务器IP:8080`
+- 不需要运行 `npm run dev`
+
+什么时候不需要 Go 编译：
+
+- 本地开发
+- 快速验证后端代码
+- 调试接口
+- 配合前端 Vite 开发服务调试页面
+
+这种情况下使用：
+
+```bash
+cd server
+go run .
+```
+
+什么时候需要 Go 编译：
+
+- 线上部署
+- 长期后台运行
+- 给别人提供可执行服务
+- 配合 `systemd`、`supervisor`、宝塔、`nohup` 等方式运行
+
+这种情况下使用：
+
+```bash
+cd server
+go build -o doc-system .
+DOC_ADDR=:8080 DOC_DATA_DIR=../data ./doc-system
 ```
 
 ## 安装 / 部署
@@ -400,6 +457,46 @@ viewer  只读用户：只能查看目录和文档内容
 - 用户自己修改密码、管理员重置用户密码后，会递增该用户的 `token_version`，旧 JWT 立即失效
 - 退出登录会清理 `doc_token` Cookie；旧版 `doc_session` Cookie 也会被兼容清理
 
+JWT 保存位置：
+
+- JWT 生成后不保存到服务端数据库
+- 后端通过 `Set-Cookie` 写入浏览器 Cookie
+- Cookie 名称是 `doc_token`
+- `doc_token` 设置为 `HttpOnly`，前端 JavaScript 不能直接读取
+- 服务端真正保存的是 `app_settings.jwt_secret` 和 `users.token_version`
+
+后续请求验证流程：
+
+```text
+浏览器请求接口
+    |
+    | Cookie: doc_token=xxx
+    v
+后端读取 doc_token
+    |
+    v
+校验 JWT 签名
+    |
+    v
+检查 JWT 是否过期
+    |
+    v
+根据 JWT 里的用户 id 查询数据库用户
+    |
+    v
+比较 JWT 中的 token_version 和数据库中的 token_version
+    |
+    v
+验证通过后进入业务接口
+```
+
+旧登录失效机制：
+
+- 用户自己修改密码后，后端会递增该用户的 `token_version`
+- 管理员重置用户密码后，后端也会递增该用户的 `token_version`
+- 旧 JWT 里的 `token_version` 和数据库不一致时，请求会返回登录失效
+- 这种方式不需要服务端保存每一个 token，也能让旧登录状态立即失效
+
 MFA 说明：
 
 - MFA 使用 TOTP
@@ -409,6 +506,14 @@ MFA 说明：
 - MFA 验证码输入框自动聚焦，输入 6 位后自动提交
 - MFA 失败限制默认是 120 秒内 5 次，可在项目配置中调整
 - 达到失败上限后，会返回账号密码登录页面
+
+MFA 技术实现：
+
+- MFA 验证码本身没有使用专门的第三方 TOTP 库，是后端在 `server/main.go` 里按 TOTP 标准实现的
+- 第三方库 `github.com/skip2/go-qrcode` 只用于生成 MFA 绑定时扫码用的二维码
+- TOTP 验证码生成和校验使用 Go 标准库：`crypto/hmac`、`crypto/sha1`、`encoding/base32`、`encoding/binary`
+- 兼容 Google Authenticator、Microsoft Authenticator、Aegis、2FAS 等标准 TOTP 认证器 App
+- 不依赖外部 MFA 服务，也不会把 MFA 数据上传到第三方
 
 密码规则：
 
