@@ -236,24 +236,31 @@ DOC_ADDR=:8080 DOC_DATA_DIR=../data ./doc-system
 常用环境变量：
 
 ```text
-DOC_ADDR=:8080          # 服务监听地址
-DOC_DATA_DIR=../data    # 数据目录
-DOC_ADMIN_PASSWORD=...  # 首次初始化 admin 时使用的默认密码
+DOC_ADDR=:8080              # 服务监听地址
+DOC_DATA_DIR=../data        # 数据目录
+DOC_ADMIN_PASSWORD=...      # 可选：设置后首次启动自动创建 admin，跳过安装向导
 ```
 
 首次启动会自动：
 
 - 创建 SQLite 表
 - 创建数据目录
-- 创建默认管理员账号
 - 生成 JWT 签名密钥 `jwt_secret`
 
-默认管理员：
+若未设置 `DOC_ADMIN_PASSWORD`，打开系统后会进入**首次安装初始化向导**，用于：
+
+- 设置项目名称
+- 创建超级管理员 `admin`（自定义昵称与密码）
+- 配置 JWT 登录有效期、新用户强制改密等基础项
+
+完成后会自动登录进入系统。管理员密码要求至少 8 位，且字母 / 数字 / 特殊符号至少包含 2 种。
+
+若已设置 `DOC_ADMIN_PASSWORD`，则首次启动会自动创建管理员并跳过向导：
 
 ```text
 用户名：admin
 昵称：超级管理员
-密码：admin123
+密码：环境变量 DOC_ADMIN_PASSWORD 的值
 ```
 
 说明：
@@ -375,15 +382,17 @@ git push -u origin main
 - `git status` 中没有 `web/dist/`
 - `git status` 中没有 `server/public/`
 - `git status` 中没有 `server/doc-system`
-- 默认管理员密码只作为本地初始化说明，不把真实生产密码写入仓库
+- 默认管理员密码由安装向导或 `DOC_ADMIN_PASSWORD` 设定，不要把真实生产密码写入仓库
 
 ## 基础使用
 
-1. 使用默认管理员登录。
+1. 首次打开系统时，若尚未初始化，先完成**安装向导**（设置项目名称与 admin 密码）。
+
+已完成初始化后，使用超级管理员登录：
 
 ```text
 用户名：admin
-密码：admin123
+密码：安装时设置的管理员密码
 ```
 
 2. 进入系统后默认展示知识库说明页。
@@ -531,6 +540,7 @@ MFA 技术实现：
 
 认证和账户：
 
+- 首次安装初始化向导（空库时引导设置项目名与 admin 密码；可用 `DOC_ADMIN_PASSWORD` 跳过）
 - 登录、登出、当前用户信息
 - JWT + HttpOnly Cookie 登录状态
 - 未开启 MFA 时账号密码成功后下发 JWT
@@ -633,7 +643,7 @@ MFA 技术实现：
 本地运行：
 
 - 首次启动自动初始化 SQLite 表
-- 首次启动自动创建默认管理员账号
+- 首次打开可走安装向导创建超级管理员（或通过 `DOC_ADMIN_PASSWORD` 自动创建）
 - 本地运行数据目录自动创建
 - 后端托管前端生产构建产物
 - 支持通过环境变量配置监听地址和数据目录
@@ -668,7 +678,7 @@ MFA 技术实现：
 - [ ] LDAP / 钉钉 / 企业微信登录
 - [ ] Docker Compose 部署
 - [ ] systemd 服务文件
-- [ ] 首次安装初始化向导
+- [x] 首次安装初始化向导
 
 长期演进：
 

@@ -137,7 +137,8 @@ data/
 - 角色权限：`admin`/`editor` 可编辑，`viewer` 只读
 - 后端写接口按角色拦截，防止只读用户绕过前端写入
 - SQLite 自动建表
-- 首次启动自动创建默认管理员
+- 首次启动自动创建数据目录与 SQLite 表
+- 首次安装初始化向导（或通过 `DOC_ADMIN_PASSWORD` 自动创建 admin）
 - 左侧树形目录
 - 固定根节点：`知识库`
 - 进入系统后默认展示知识库概览页
@@ -258,6 +259,8 @@ doc_1.md
 认证：
 
 ```text
+GET  /api/setup/status
+POST /api/setup
 POST /api/login
 POST /api/login/mfa
 POST /api/logout
@@ -267,6 +270,8 @@ GET  /api/app-config
 GET  /api/settings
 PUT  /api/settings
 ```
+
+空库时 `GET /api/setup/status` 返回 `needed=true`，需先 `POST /api/setup` 完成初始化；可用环境变量 `DOC_ADMIN_PASSWORD` 在服务启动时自动创建 admin 并跳过向导。
 
 `/api/settings` 仅允许初始化超级管理员 `admin` 访问；普通管理员角色不能查看或修改项目配置。
 
@@ -344,18 +349,14 @@ go run .
 DOC_ADDR=:8080 DOC_DATA_DIR=../data go run .
 ```
 
-默认账号：
+首次安装：
 
-```text
-admin / admin123
-```
-
-默认密码可通过环境变量改：
+- 空库时打开网页进入安装向导，设置项目名称与 admin 密码后自动登录
+- 也可设置环境变量 `DOC_ADMIN_PASSWORD`，服务启动时自动创建 admin 并跳过向导
 
 ```bash
 DOC_ADMIN_PASSWORD=your-password go run .
 ```
-
 ### 前端开发运行
 
 ```bash
@@ -502,7 +503,7 @@ go build -o doc-system .
 - 一键导出
 - Docker Compose 部署
 - systemd 服务文件
-- 首次安装初始化向导
+- 首次安装初始化向导（已支持）
 
 ### P3：长期演进
 
@@ -541,4 +542,4 @@ web/src/api.js
 Docker Compose / systemd 部署，或正文全文搜索
 ```
 
-原因：双编辑器、大纲、导入转换、文档历史版本和操作日志已补齐，下一步可继续补部署体验或检索能力。
+原因：双编辑器、大纲、导入转换、文档历史版本、操作日志和首次安装向导已补齐，下一步可继续补部署体验或检索能力。

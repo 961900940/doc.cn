@@ -48,6 +48,17 @@ export function getAppConfig() {
   return api('/api/app-config')
 }
 
+export function getSetupStatus() {
+  return api('/api/setup/status')
+}
+
+export function completeSetup(payload) {
+  return api('/api/setup', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
 export function changeMyPassword(currentPassword, newPassword) {
   return api('/api/me/password', {
     method: 'PUT',

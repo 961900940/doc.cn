@@ -13,7 +13,9 @@ import {
   getDocument,
   getDocumentVersion,
   getSettings,
+  getSetupStatus,
   getTree,
+  completeSetup,
   importDocument,
   listDocumentVersions,
   listOperationLogs,
@@ -52,7 +54,19 @@ const ByteMdEditor = defineAsyncComponent(() => import('./editor/ByteMdEditor.vu
 const VditorEditor = defineAsyncComponent(() => import('./editor/VditorEditor.vue'))
 
 const user = ref(null)
-const loginForm = ref({ username: 'admin', password: 'admin123' })
+const setupNeeded = ref(false)
+const setupChecking = ref(true)
+const setupSaving = ref(false)
+const setupError = ref('')
+const setupForm = ref({
+  app_name: 'Doc System',
+  admin_nickname: '超级管理员',
+  admin_password: '',
+  admin_password_confirm: '',
+  force_password_change_new_users: false,
+  jwt_expire_days: 1
+})
+const loginForm = ref({ username: 'admin', password: '' })
 const loginError = ref('')
 const mfaChallenge = ref(null)
 const mfaForm = ref({ code: '' })
@@ -177,6 +191,19 @@ function handleOutlineSelect(item) {
 onMounted(async () => {
   await loadAppConfig()
   try {
+    const status = await getSetupStatus()
+    setupNeeded.value = !!status?.needed
+    if (status?.app_name) {
+      setupForm.value.app_name = status.app_name
+      appConfig.value = { app_name: status.app_name }
+    }
+  } catch {
+    setupNeeded.value = false
+  } finally {
+    setupChecking.value = false
+  }
+  if (setupNeeded.value) return
+  try {
     user.value = await me()
     if (!user.value.must_change_password) {
       await refreshTree(true)
@@ -185,6 +212,38 @@ onMounted(async () => {
     user.value = null
   }
 })
+
+async function submitSetup() {
+  setupError.value = ''
+  const password = setupForm.value.admin_password
+  const confirm = setupForm.value.admin_password_confirm
+  if (!setupForm.value.app_name.trim()) {
+    setupError.value = '项目名称不能为空'
+    return
+  }
+  if (password !== confirm) {
+    setupError.value = '两次输入的管理员密码不一致'
+    return
+  }
+  setupSaving.value = true
+  try {
+    const result = await completeSetup({
+      app_name: setupForm.value.app_name.trim(),
+      admin_nickname: setupForm.value.admin_nickname.trim() || '超级管理员',
+      admin_password: password,
+      force_password_change_new_users: setupForm.value.force_password_change_new_users,
+      jwt_expire_days: setupForm.value.jwt_expire_days
+    })
+    setupNeeded.value = false
+    appConfig.value = { app_name: setupForm.value.app_name.trim() }
+    await finishLogin(result)
+    ElMessage.success('初始化完成，已自动登录')
+  } catch (error) {
+    setupError.value = cleanError(error.message) || '初始化失败'
+  } finally {
+    setupSaving.value = false
+  }
+}
 
 async function finishLogin(nextUser) {
   user.value = nextUser
@@ -1200,7 +1259,73 @@ function roleLabel(role) {
 </script>
 
 <template>
-  <main v-if="!user" class="login-shell">
+  <main v-if="setupChecking" class="login-shell">
+    <section class="login-panel">
+      <div>
+        <h1>{{ appName }}</h1>
+        <p>正在检查安装状态…</p>
+      </div>
+    </section>
+  </main>
+
+  <main v-else-if="setupNeeded" class="login-shell">
+    <section class="login-panel setup-panel">
+      <div>
+        <h1>首次安装向导</h1>
+        <p>创建超级管理员并完成基础配置后即可开始使用。</p>
+      </div>
+      <el-form label-position="top" @submit.prevent="submitSetup">
+        <el-form-item label="项目名称">
+          <el-input v-model="setupForm.app_name" maxlength="40" show-word-limit autocomplete="off" />
+        </el-form-item>
+        <el-form-item label="管理员账号">
+          <el-input model-value="admin" disabled />
+          <div class="form-tip">固定为 admin，作为系统超级管理员账号。</div>
+        </el-form-item>
+        <el-form-item label="管理员昵称">
+          <el-input v-model="setupForm.admin_nickname" maxlength="40" autocomplete="off" />
+        </el-form-item>
+        <el-form-item label="管理员密码">
+          <el-input
+            v-model="setupForm.admin_password"
+            type="password"
+            show-password
+            autocomplete="new-password"
+            placeholder="至少 8 位，字母/数字/符号至少 2 种"
+          />
+        </el-form-item>
+        <el-form-item label="确认密码">
+          <el-input
+            v-model="setupForm.admin_password_confirm"
+            type="password"
+            show-password
+            autocomplete="new-password"
+          />
+        </el-form-item>
+        <el-form-item label="JWT 登录有效期（天）">
+          <el-input-number
+            v-model="setupForm.jwt_expire_days"
+            :min="1"
+            :max="90"
+            :controls="false"
+            class="full-width"
+          />
+        </el-form-item>
+        <el-form-item label="新用户首次登录强制改密">
+          <div class="setup-switch-row">
+            <el-switch v-model="setupForm.force_password_change_new_users" />
+            <span class="form-tip">可在安装后于项目配置中修改。</span>
+          </div>
+        </el-form-item>
+        <el-alert v-if="setupError" :title="setupError" type="error" :closable="false" />
+        <el-button type="primary" size="large" :loading="setupSaving" native-type="submit">
+          {{ setupSaving ? '正在初始化' : '完成初始化并进入系统' }}
+        </el-button>
+      </el-form>
+    </section>
+  </main>
+
+  <main v-else-if="!user" class="login-shell">
     <section v-if="!mfaChallenge" class="login-panel">
       <div>
         <h1>{{ appName }}</h1>
@@ -1218,7 +1343,6 @@ function roleLabel(role) {
           {{ loading ? '正在登录' : '登录文档系统' }}
         </el-button>
       </el-form>
-      <div class="login-hint">默认账号：admin / admin123</div>
     </section>
 
     <section v-else class="login-panel mfa-panel">

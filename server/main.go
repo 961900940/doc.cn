@@ -139,6 +139,8 @@ func main() {
 	mux.HandleFunc("/api/login", a.handleLogin)
 	mux.HandleFunc("/api/login/mfa", a.handleLoginMFA)
 	mux.HandleFunc("/api/app-config", a.handleAppConfig)
+	mux.HandleFunc("/api/setup/status", a.handleSetupStatus)
+	mux.HandleFunc("/api/setup", a.handleSetup)
 	mux.HandleFunc("/api/logout", a.withAuth(a.handleLogout))
 	mux.HandleFunc("/api/me", a.withAuth(a.handleMe))
 	mux.HandleFunc("/api/me/password", a.withAuth(a.handleMePassword))
@@ -200,7 +202,7 @@ func newApp(dataDir string) (*app, error) {
 		return nil, err
 	}
 	a.jwtSecret = []byte(jwtSecret)
-	if err := a.seedAdmin(); err != nil {
+	if err := a.ensureInitialSetup(); err != nil {
 		return nil, err
 	}
 	return a, nil
@@ -378,30 +380,18 @@ func (a *app) columnExists(table, column string) (bool, error) {
 	return false, rows.Err()
 }
 
-func (a *app) seedAdmin() error {
-	var count int
-	if err := a.db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&count); err != nil {
-		return err
-	}
-	if count > 0 {
-		return nil
-	}
-	password := getenv("DOC_ADMIN_PASSWORD", "admin123")
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		return err
-	}
-	_, err = a.db.Exec(
-		`INSERT INTO users (username, password_hash, nickname, role, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))`,
-		"admin", string(hash), "超级管理员", "admin",
-	)
-	return err
-}
-
 func (a *app) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
+		return
+	}
+	needed, err := a.setupNeeded()
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	if needed {
+		http.Error(w, "系统尚未完成首次安装，请先完成初始化向导", http.StatusServiceUnavailable)
 		return
 	}
 	var req struct {

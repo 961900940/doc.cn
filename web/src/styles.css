@@ -46,6 +46,16 @@ textarea {
   width: min(560px, calc(100vw - 32px));
 }
 
+.setup-panel {
+  width: min(520px, calc(100vw - 32px));
+}
+
+.setup-switch-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .login-panel h1 {
   margin: 0;
   font-size: 26px;
