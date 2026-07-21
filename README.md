@@ -396,33 +396,6 @@ DOC_ADDR=:8080 DOC_DATA_DIR=../data ./doc-system
 ```
 
 
-## 推送到 Git 前处理
-
-当前项目可以作为初始化项目推送到 Git，建议只提交源码、配置说明和文档，不提交本地运行数据。
-
-刚从 Git 拉取项目后，如果没有看到以下目录或文件，这是正常的：
-
-- `server/public/`：前端生产构建后才会生成
-- `server/doc-system`：后端编译后才会生成
-- `web/dist/`：前端执行 `npm run build` 后才会生成
-- `web/node_modules/`：前端执行 `npm install` 后才会生成
-- `data/`：服务首次启动后会按需创建，属于本地运行数据
-
-如果新拉取的项目里已经有 `data/app.db`、`data/docs/`、`data/uploads/`，说明本地运行数据可能被提交到了 Git。推广给别人使用时不建议提交这些文件，因为里面可能包含用户、密码哈希、JWT 密钥、MFA 配置、公司文档和上传附件。
-
-
-不应该提交：
-
-- `data/`：包含 SQLite 数据库、文档正文、上传附件、JWT 密钥和本地用户数据
-- `web/node_modules/`：前端依赖目录，可通过 `npm install` 重新安装
-- `web/dist/`：前端构建产物
-- `server/public/`：复制给 Go 服务托管的前端构建产物
-- `server/doc-system`：后端编译产物
-- `.cache/`：本地 Go 缓存
-- `.idea/`：本地 IDE 配置
-- `*.log`、`*.tmp`、`*-副本.*` 等本地临时文件
-
-
 
 ## 角色权限
 
