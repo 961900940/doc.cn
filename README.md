@@ -20,7 +20,7 @@ docs/project-context.md
 - 使用直观：左侧文件夹层级树，右侧 Markdown 内容区，进入系统默认展示知识库说明页。
 - 权限可控：支持管理员、编辑者、只读用户，后端接口也会做权限拦截。
 - 安全登录：登录状态使用 JWT + HttpOnly Cookie，支持 MFA、强制改密、密码重置后旧登录失效。
-- 适合 MVP 先用起来：不依赖 MySQL，不强制 Docker，后续可以继续扩展版本管理、全文搜索、导出、LDAP 等能力。
+- 适合 MVP 先用起来：不依赖 MySQL，不强制 Docker，后续可以继续扩展全文搜索、标签、导出、LDAP、Docker Compose 等能力。
 
 ## 技术架构
 
@@ -144,6 +144,10 @@ http://localhost:5173
 如果你已有 data/app.db，说明系统已经初始化过，不会再出现向导。
 
 想重新测试首次安装向导，不要删正式数据，可以用临时数据目录：
+```bash
+cd /path/to/doc.cn/server
+DOC_ADDR=:8080 DOC_DATA_DIR=/tmp/doc-system-test-data go run .
+```
 
 
 #### 5.本地开发特点：
@@ -197,6 +201,9 @@ DOC_ADDR=:8080 DOC_DATA_DIR=../data ./doc-system
 ```
 
 浏览器访问：
+```text
+http://localhost:8080
+```
 
 这种方式下不需要执行 npm run dev。
 
@@ -213,14 +220,14 @@ DOC_ADDR=:8080 DOC_DATA_DIR=../data ./doc-system
 ### 什么时候需要安装依赖
 
 需要执行 npm install 的情况：
-```php
+```bash
 第一次拉项目
 web/package.json 或 package-lock.json 变化后
 node_modules 被删除后
 ```
 
 需要执行 go mod download 的情况：
-```php
+```bash
 第一次拉项目
 server/go.mod 或 server/go.sum 变化后
 Go 依赖缓存被清理后
@@ -276,6 +283,12 @@ make server-build
 
 #### 1.环境要求-服务器需要安装：
 
+现在写的是服务器需要 Go、Node、npm。严格来说：构建前端时需要 Node.js + npm
+
+编译后端时需要 Go
+
+如果已经提前构建好了 server/public 和 server/doc-system，线上运行时只需要能运行 Go 编译出的二进制文件，不需要 Node/npm
+
 - Go 1.22+
 - Node.js 18+
 - npm
@@ -326,7 +339,7 @@ DOC_ADDR=:8080 DOC_DATA_DIR=../data ./doc-system
 ```
 
 访问：
-```text
+```bash
 http://服务器IP:8080
 ```
 
@@ -363,37 +376,6 @@ DOC_ADDR=:8080 DOC_DATA_DIR=../data ./doc-system
 ```
 
 否则可能找不到 server/public，导致页面打不开。
-
-
-
-首次部署步骤：
-
-```bash
-cd /path/to/doc.cn
-
-cd web
-npm install
-npm run build
-
-cd ..
-rm -rf server/public
-mkdir -p server/public
-cp -R web/dist/. server/public/
-
-cd server
-GOPROXY=https://goproxy.cn,direct go mod download
-GOPROXY=https://goproxy.cn,direct go build -o doc-system .
-DOC_ADDR=:8080 DOC_DATA_DIR=../data ./doc-system
-```
-
-也可以使用 Makefile：
-
-```bash
-make web-build
-make server-build
-cd server
-DOC_ADDR=:8080 DOC_DATA_DIR=../data ./doc-system
-```
 
 
 

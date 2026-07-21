@@ -415,36 +415,33 @@ go build -o doc-system .
 GOPROXY=https://goproxy.cn,direct
 ```
 
-## 已验证命令
-
-前端：
+## 首次部署步骤：
 
 ```bash
+cd /path/to/doc.cn
+
 cd web
+npm install
 npm run build
-npm audit --json
+
+cd ..
+rm -rf server/public
+mkdir -p server/public
+cp -R web/dist/. server/public/
+
+cd server
+GOPROXY=https://goproxy.cn,direct go mod download
+GOPROXY=https://goproxy.cn,direct go build -o doc-system .
+DOC_ADDR=:8080 DOC_DATA_DIR=../data ./doc-system
 ```
 
-结果：
-
-```text
-构建通过
-npm audit 0 vulnerabilities
-```
-
-后端：
+也可以使用 Makefile：
 
 ```bash
+make web-build
+make server-build
 cd server
-go fmt ./...
-go build -o doc-system .
-```
-
-结果：
-
-```text
-格式化通过
-编译通过
+DOC_ADDR=:8080 DOC_DATA_DIR=../data ./doc-system
 ```
 
 接口冒烟测试已覆盖：
