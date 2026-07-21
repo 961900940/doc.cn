@@ -45,7 +45,8 @@ Go + SQLite + Markdown 文件 + Vue 3
 - Vue 3
 - Vite
 - Element Plus
-- markdown-it
+- ByteMD（简洁编辑，默认）
+- Vditor（可视化编辑，可选）
 
 没有使用 MySQL。Markdown 正文不存数据库。
 
@@ -514,18 +515,17 @@ web/src/api.js
 如果要继续做最有价值的下一步，建议从这几个需求里选一个：
 
 ```text
-1. Markdown 编辑器升级为 Vditor
-2. Mermaid 和代码高亮
-3. Docker Compose / systemd 部署
-4. 文档历史版本
-5. 正文全文搜索
-6. 上传文件大小和类型限制配置化
+1. 文档大纲
+2. Docker Compose / systemd 部署
+3. 文档历史版本
+4. 正文全文搜索
+5. 上传文件大小和类型限制配置化
 ```
 
 当前最推荐的下一步：
 
 ```text
-Markdown 编辑器升级为 Vditor 或补 Mermaid / 代码高亮
+文档大纲，或 Docker Compose / systemd 部署
 ```
 
-原因：回收站和基础删除确认已补齐，下一步更适合提升日常写文档体验。
+原因：双编辑器（简洁编辑 / 可视化编辑）与 Mermaid、代码高亮已补齐，下一步可继续补阅读导航或部署体验。

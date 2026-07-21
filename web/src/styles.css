@@ -128,8 +128,55 @@ textarea {
 }
 
 .brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.brand-name {
   font-weight: 700;
   font-size: 17px;
+  white-space: nowrap;
+}
+
+.editor-engine-switch {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 10px;
+  border: 1px solid #dde3ee;
+  border-radius: 999px;
+  background: #f5f7fb;
+  color: #4b5568;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.editor-engine-switch:hover {
+  background: #eef2f8;
+  color: #1d2433;
+}
+
+.editor-engine-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.35;
+  padding: 2px 0;
+}
+
+.editor-engine-option strong {
+  font-weight: 600;
+  color: #1d2433;
+}
+
+.editor-engine-option span {
+  font-size: 12px;
+  color: #6b7280;
+  white-space: normal;
+  max-width: 220px;
 }
 
 .search-box {
@@ -574,93 +621,13 @@ textarea {
 .editor-grid {
   min-height: 0;
   display: grid;
-  grid-template-columns: 1fr 1fr;
-}
-
-.editor-grid.mode-edit,
-.editor-grid.mode-preview {
   grid-template-columns: 1fr;
 }
 
-.editor-grid.mode-preview {
-  overflow: auto;
-  padding: 28px;
-  background: #f5f7fb;
-}
-
-textarea {
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  resize: none;
-  border: 0;
-  border-right: 1px solid #dde3ee;
-  padding: 24px;
-  outline: none;
-  color: #1d2433;
-  background: #fbfcff;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 14px;
-  line-height: 1.7;
-}
-
-.markdown-preview {
-  min-width: 0;
-  overflow: auto;
-  padding: 24px 32px 80px;
-  background: #fff;
-  line-height: 1.75;
-}
-
-.editor-grid.mode-preview .markdown-preview {
-  width: 100%;
-  min-height: 100%;
-  margin: 0 auto;
-  border: 1px solid #dde3ee;
-  border-radius: 8px;
-  box-shadow: 0 12px 34px rgb(29 36 51 / 8%);
-}
-
-.markdown-preview.preview-narrow {
-  max-width: clamp(760px, 52%, 1120px);
-}
-
-.markdown-preview.preview-default {
-  max-width: clamp(960px, 68%, 1480px);
-}
-
-.markdown-preview.preview-wide {
-  max-width: clamp(1280px, 86%, 1880px);
-}
-
-.markdown-preview h1,
-.markdown-preview h2,
-.markdown-preview h3 {
-  line-height: 1.35;
-}
-
-.markdown-preview code {
-  padding: 2px 5px;
-  border-radius: 4px;
-  background: #eef2f8;
-}
-
-.markdown-preview pre {
-  overflow: auto;
-  padding: 14px;
-  border-radius: 6px;
-  background: #172033;
-  color: #eef5ff;
-}
-
-.markdown-preview pre code {
-  padding: 0;
-  background: transparent;
-}
-
-.markdown-preview img {
-  max-width: 100%;
-  border-radius: 6px;
+.editor-grid.mode-edit,
+.editor-grid.mode-preview,
+.editor-grid.mode-split {
+  grid-template-columns: 1fr;
 }
 
 .overview-page {
@@ -820,10 +787,6 @@ textarea {
     grid-template-columns: 1fr;
   }
 
-  .editor-grid.mode-preview {
-    padding: 12px;
-  }
-
   .overview-page {
     padding: 24px 18px 64px;
   }
@@ -857,11 +820,5 @@ textarea {
 
   .architecture-map span {
     text-align: center;
-  }
-
-  textarea {
-    min-height: 320px;
-    border-right: 0;
-    border-bottom: 1px solid #dde3ee;
   }
 }

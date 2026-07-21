@@ -42,7 +42,7 @@ SQLite + Markdown 文件 + 本地 uploads
 - 数据库：SQLite，使用 `modernc.org/sqlite`
 - 正文存储：本地 Markdown 文件
 - 附件存储：本地 `uploads`
-- 前端：Vue 3 + Vite + Element Plus + markdown-it
+- 前端：Vue 3 + Vite + Element Plus + ByteMD / Vditor（双编辑器可选）
 - MFA：TOTP，兼容 Google Authenticator、2FAS、Aegis 等认证器 App
 
 ## 目录结构
@@ -589,11 +589,14 @@ MFA 技术实现：
 
 - Markdown 文档创建、读取、保存、重命名
 - 编辑区支持 `Ctrl + S` / `Cmd + S` 快捷键保存
+- 双编辑器可选：默认「简洁编辑」（ByteMD），也可切换「可视化编辑」（Vditor）
+- 左上角项目名称旁可切换编辑器，选择会保存在浏览器本地
 - 编辑 / 分屏 / 预览模式切换
 - Markdown 预览
 - 预览模式支持窄屏、默认、宽屏三种阅读宽度
 - 图片和附件上传
 - 上传后自动插入 Markdown 链接
+- 内置 GFM、代码高亮与 Mermaid 支持（随所选编辑器）
 
 知识库首页和搜索：
 
@@ -619,9 +622,9 @@ MFA 技术实现：
 
 - [x] 回收站和恢复
 - [x] 更好的删除确认和错误提示
-- [ ] Markdown 编辑器升级为 Vditor 或 ByteMD
-- [ ] Mermaid 渲染
-- [ ] 代码高亮增强
+- [x] Markdown 编辑器升级为 Vditor 或 ByteMD（双编辑器可选，默认简洁编辑）
+- [x] Mermaid 渲染
+- [x] 代码高亮增强
 - [ ] 文档大纲
 - [ ] PDF / Excel / 旧版 doc 导入转换
 

@@ -6,6 +6,7 @@ server/doc-system
 server/public/
 web/dist/
 web/node_modules/
+web/public/vditor/
 *.log
 *.local
 *.tmp

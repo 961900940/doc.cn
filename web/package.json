@@ -4,14 +4,21 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0",
-    "build": "vite build",
+    "postinstall": "node scripts/copy-vditor.mjs",
+    "dev": "npm run postinstall && vite --host 0.0.0.0",
+    "build": "npm run postinstall && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@bytemd/plugin-breaks": "^1.22.0",
+    "@bytemd/plugin-gfm": "^1.22.0",
+    "@bytemd/plugin-highlight": "^1.22.0",
+    "@bytemd/plugin-mermaid": "^1.22.0",
+    "@bytemd/vue-next": "^1.22.0",
     "@element-plus/icons-vue": "^2.3.1",
+    "bytemd": "^1.22.0",
     "element-plus": "^2.8.1",
-    "markdown-it": "^14.1.0",
+    "vditor": "^3.11.2",
     "vue": "^3.4.38"
   },
   "devDependencies": {

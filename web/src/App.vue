@@ -1,7 +1,6 @@
 <script setup>
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import MarkdownIt from 'markdown-it'
 import {
   changeMyPassword,
   createDocument,
@@ -33,12 +32,14 @@ import {
   uploadFile,
   verifyLoginMFA
 } from './api'
+import {
+  EDITOR_ENGINES,
+  loadEditorEngine,
+  saveEditorEngine
+} from './editor/constants'
 
-const md = new MarkdownIt({
-  html: false,
-  linkify: true,
-  breaks: true
-})
+const ByteMdEditor = defineAsyncComponent(() => import('./editor/ByteMdEditor.vue'))
+const VditorEditor = defineAsyncComponent(() => import('./editor/VditorEditor.vue'))
 
 const user = ref(null)
 const loginForm = ref({ username: 'admin', password: 'admin123' })
@@ -95,6 +96,8 @@ const previewWidths = [
   { label: '默认', value: 'default' },
   { label: '宽屏', value: 'wide' }
 ]
+const editorEngine = ref(loadEditorEngine())
+const editorEngineOptions = Object.values(EDITOR_ENGINES)
 const searchQuery = ref('')
 const searchResults = ref([])
 const searchLoading = ref(false)
@@ -102,12 +105,20 @@ const searchCompleted = ref(false)
 const saving = ref(false)
 const fileInput = ref(null)
 const mfaCodeInput = ref(null)
+const activeEditorRef = ref(null)
 
-const previewHtml = computed(() => md.render(document.value?.content || ''))
 const appName = computed(() => appConfig.value.app_name || 'Doc System')
 const canEdit = computed(() => user.value?.role === 'admin' || user.value?.role === 'editor')
 const isSuperAdmin = computed(() => user.value?.username === 'admin' && user.value?.role === 'admin')
 const effectiveEditorMode = computed(() => (canEdit.value ? editorMode.value : 'preview'))
+const currentEditorEngineMeta = computed(
+  () => EDITOR_ENGINES[editorEngine.value] || EDITOR_ENGINES.bytemd
+)
+
+function setEditorEngine(engine) {
+  editorEngine.value = saveEditorEngine(engine)
+  ElMessage.success(`已切换为${EDITOR_ENGINES[editorEngine.value].label}`)
+}
 
 onMounted(async () => {
   await loadAppConfig()
@@ -904,13 +915,6 @@ async function saveCurrent() {
   }
 }
 
-async function handleEditorKeydown(event) {
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
-    event.preventDefault()
-    await saveCurrent()
-  }
-}
-
 async function runSearch() {
   const q = searchQuery.value.trim()
   if (!q) {
@@ -945,7 +949,11 @@ async function insertUpload(event) {
   const result = await uploadFile(file)
   const image = file.type.startsWith('image/')
   const snippet = image ? `![${result.name}](${result.url})` : `[${result.name}](${result.url})`
-  document.value.content = `${document.value.content || ''}\n\n${snippet}\n`
+  if (activeEditorRef.value?.insertMarkdown) {
+    activeEditorRef.value.insertMarkdown(snippet)
+  } else {
+    document.value.content = `${document.value.content || ''}\n\n${snippet}\n`
+  }
   event.target.value = ''
 }
 
@@ -1057,7 +1065,30 @@ function roleLabel(role) {
 
   <main v-else class="app-shell">
     <header class="topbar">
-      <div class="brand">{{ appName }}</div>
+      <div class="brand">
+        <span class="brand-name">{{ appName }}</span>
+        <el-dropdown trigger="click" @command="setEditorEngine">
+          <button class="editor-engine-switch" type="button">
+            <span>{{ currentEditorEngineMeta.label }}</span>
+            <el-icon><ArrowDown /></el-icon>
+          </button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item
+                v-for="item in editorEngineOptions"
+                :key="item.id"
+                :command="item.id"
+                :disabled="editorEngine === item.id"
+              >
+                <div class="editor-engine-option">
+                  <strong>{{ item.label }}</strong>
+                  <span>{{ item.hint }}</span>
+                </div>
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+      </div>
       <div class="top-actions">
         <el-button v-if="canEdit" :icon="'FolderAdd'" @click="createRootFolder">文件夹</el-button>
         <el-button v-if="canEdit" type="primary" :icon="'DocumentAdd'" @click="createDoc()">文档</el-button>
@@ -1184,17 +1215,23 @@ function roleLabel(role) {
           </div>
 
           <div class="editor-grid" :class="`mode-${effectiveEditorMode}`">
-            <textarea
-              v-if="canEdit && effectiveEditorMode !== 'preview'"
+            <ByteMdEditor
+              v-if="editorEngine === 'bytemd'"
+              ref="activeEditorRef"
               v-model="document.content"
-              spellcheck="false"
-              @keydown="handleEditorKeydown"
+              :mode="effectiveEditorMode"
+              :preview-width="previewWidth"
+              :readonly="!canEdit"
+              @save="saveCurrent"
             />
-            <article
-              v-if="effectiveEditorMode !== 'edit'"
-              class="markdown-preview"
-              :class="effectiveEditorMode === 'preview' ? `preview-${previewWidth}` : ''"
-              v-html="previewHtml"
+            <VditorEditor
+              v-else
+              ref="activeEditorRef"
+              v-model="document.content"
+              :mode="effectiveEditorMode"
+              :preview-width="previewWidth"
+              :readonly="!canEdit"
+              @save="saveCurrent"
             />
           </div>
         </template>
