@@ -600,6 +600,41 @@ textarea {
   color: #334155;
 }
 
+.logs-toolbar {
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.logs-hint {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.logs-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.logs-table {
+  width: 100%;
+}
+
+.logs-empty {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+}
+
+.logs-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
 .trash-item-name {
   min-width: 0;
   display: flex;

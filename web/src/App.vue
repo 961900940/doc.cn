@@ -16,6 +16,7 @@ import {
   getTree,
   importDocument,
   listDocumentVersions,
+  listOperationLogs,
   listTrash,
   listUsers,
   login,
@@ -86,6 +87,16 @@ const historyPreviewLoading = ref(false)
 const historyRestoring = ref(false)
 const selectedHistoryId = ref(null)
 const historyPreview = ref(null)
+const logsDialogVisible = ref(false)
+const logsLoading = ref(false)
+const logItems = ref([])
+const logActions = ref([])
+const logsTotal = ref(0)
+const logsPage = ref(1)
+const logsPageSize = ref(20)
+const logsActionFilter = ref('')
+const logsKeyword = ref('')
+const logsScopeAll = ref(false)
 const userFormVisible = ref(false)
 const userSaving = ref(false)
 const editingUser = ref(null)
@@ -273,6 +284,63 @@ async function openUserManager() {
   userDialogVisible.value = true
   userPage.value = 1
   await loadUsers()
+}
+
+async function openOperationLogs() {
+  logsDialogVisible.value = true
+  logsPage.value = 1
+  await loadOperationLogs()
+}
+
+async function loadOperationLogs() {
+  logsLoading.value = true
+  try {
+    const result = await listOperationLogs({
+      page: logsPage.value,
+      pageSize: logsPageSize.value,
+      action: logsActionFilter.value,
+      q: logsKeyword.value
+    })
+    logItems.value = result?.items || []
+    logActions.value = result?.actions || logActions.value
+    logsTotal.value = result?.total || 0
+    logsPage.value = result?.page || logsPage.value
+    logsPageSize.value = result?.page_size || logsPageSize.value
+    logsScopeAll.value = !!result?.scope?.all
+  } catch (error) {
+    ElMessage.error(cleanError(error.message) || '加载操作日志失败')
+  } finally {
+    logsLoading.value = false
+  }
+}
+
+async function handleLogsPageChange(page) {
+  logsPage.value = page
+  await loadOperationLogs()
+}
+
+async function handleLogsPageSizeChange(size) {
+  logsPageSize.value = size
+  logsPage.value = 1
+  await loadOperationLogs()
+}
+
+async function searchOperationLogs() {
+  logsPage.value = 1
+  await loadOperationLogs()
+}
+
+async function clearOperationLogSearch() {
+  logsKeyword.value = ''
+  logsActionFilter.value = ''
+  logsPage.value = 1
+  await loadOperationLogs()
+}
+
+function logOperatorLabel(row) {
+  if (!row?.user_id) return '系统 / 未知'
+  if (row.nickname) return `${row.nickname}（${row.username}）`
+  return row.username || `用户 #${row.user_id}`
 }
 
 async function openProjectConfig() {
@@ -1204,6 +1272,9 @@ function roleLabel(role) {
               <el-dropdown-menu>
                 <el-dropdown-item disabled>当前角色：{{ roleLabel(user.role) }}</el-dropdown-item>
                 <el-dropdown-item :icon="'Lock'" @click="openMyPasswordDialog">修改密码</el-dropdown-item>
+                <el-dropdown-item :icon="'Notebook'" @click="openOperationLogs">
+                  操作日志
+                </el-dropdown-item>
                 <el-dropdown-item v-if="user.role === 'admin'" :icon="'User'" @click="openUserManager">
                   用户管理
                 </el-dropdown-item>
@@ -1518,6 +1589,70 @@ function roleLabel(role) {
             background
             @current-change="handleTrashPageChange"
             @size-change="handleTrashPageSizeChange"
+          />
+        </div>
+      </el-dialog>
+
+      <el-dialog v-model="logsDialogVisible" title="操作日志" width="980px" class="logs-dialog">
+        <div class="logs-toolbar">
+          <div class="logs-hint">
+            {{ logsScopeAll ? '管理员可查看全部用户的操作记录。' : '当前仅显示你自己的操作记录。' }}
+          </div>
+          <div class="logs-filters">
+            <el-select
+              v-model="logsActionFilter"
+              clearable
+              placeholder="全部操作类型"
+              style="width: 200px"
+              @change="searchOperationLogs"
+            >
+              <el-option
+                v-for="item in logActions"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </el-select>
+            <el-input
+              v-model="logsKeyword"
+              :placeholder="logsScopeAll ? '搜索用户或详情' : '搜索详情'"
+              clearable
+              :prefix-icon="'Search'"
+              style="width: 240px"
+              @keyup.enter="searchOperationLogs"
+              @clear="searchOperationLogs"
+            />
+            <el-button type="primary" :icon="'Search'" @click="searchOperationLogs">搜索</el-button>
+            <el-button :icon="'Refresh'" @click="clearOperationLogSearch">重置</el-button>
+          </div>
+        </div>
+        <el-table v-if="logItems.length || logsLoading" v-loading="logsLoading" :data="logItems" class="logs-table">
+          <el-table-column label="时间" width="170">
+            <template #default="{ row }">{{ formatBeijingTime(row.created_at) }}</template>
+          </el-table-column>
+          <el-table-column v-if="logsScopeAll" label="操作人" min-width="150">
+            <template #default="{ row }">{{ logOperatorLabel(row) }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="140">
+            <template #default="{ row }">
+              <el-tag size="small" type="info">{{ row.action_label || row.action }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="详情" min-width="280" prop="detail" show-overflow-tooltip />
+        </el-table>
+        <div v-else class="logs-empty">
+          <el-empty description="暂无操作日志" />
+        </div>
+        <div v-if="logsTotal > 0" class="logs-pagination">
+          <el-pagination
+            v-model:current-page="logsPage"
+            v-model:page-size="logsPageSize"
+            :total="logsTotal"
+            :page-sizes="[10, 20, 50]"
+            layout="total, sizes, prev, pager, next"
+            background
+            @current-change="handleLogsPageChange"
+            @size-change="handleLogsPageSizeChange"
           />
         </div>
       </el-dialog>

@@ -275,6 +275,7 @@ func (a *app) handleDocumentVersions(w http.ResponseWriter, r *http.Request, use
 			badRequest(w, err.Error())
 			return
 		}
+		a.addOperationLog(user.ID, "document.restore_version", "document", documentID, fmt.Sprintf("文档恢复到历史版本 #%d", versionID))
 		writeJSON(w, http.StatusOK, map[string]string{"message": "已恢复到所选历史版本"})
 		return
 	}

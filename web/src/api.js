@@ -190,6 +190,16 @@ export function listTrash({ page = 1, pageSize = 10 } = {}) {
   return api(`/api/trash?${query.toString()}`)
 }
 
+export function listOperationLogs({ page = 1, pageSize = 20, action = '', q = '' } = {}) {
+  const query = new URLSearchParams({
+    page: String(page),
+    page_size: String(pageSize)
+  })
+  if (action) query.set('action', action)
+  if (q.trim()) query.set('q', q.trim())
+  return api(`/api/operation-logs?${query.toString()}`)
+}
+
 export function restoreTrashItem(type, id) {
   return api(`/api/trash/${type}/${id}/restore`, { method: 'POST' })
 }

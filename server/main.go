@@ -156,6 +156,7 @@ func main() {
 	mux.HandleFunc("/api/trash/", a.withAuth(a.handleTrashByID))
 	mux.HandleFunc("/api/uploads", a.withAuth(a.handleUploads))
 	mux.HandleFunc("/api/search", a.withAuth(a.handleSearch))
+	mux.HandleFunc("/api/operation-logs", a.withAuth(a.handleOperationLogs))
 	mux.Handle("/uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir(a.uploadDir))))
 	mux.HandleFunc("/", serveStatic)
 
@@ -346,7 +347,7 @@ func (a *app) migrate() error {
 	); err != nil {
 		return err
 	}
-	return nil
+	return a.ensureOperationLogsIndex()
 }
 
 func (a *app) columnExists(table, column string) (bool, error) {
@@ -407,6 +408,7 @@ func (a *app) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	user, hash, err := a.findUser(req.Username)
 	if err != nil || bcrypt.CompareHashAndPassword([]byte(hash), []byte(req.Password)) != nil {
+		a.logAuthLoginFailed(req.Username)
 		http.Error(w, "用户名或密码错误", http.StatusUnauthorized)
 		return
 	}
@@ -418,6 +420,7 @@ func (a *app) handleLogin(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
+	a.logAuthLogin(user)
 	writeJSON(w, http.StatusOK, user)
 }
 
@@ -506,6 +509,7 @@ func (a *app) handleLoginMFA(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
+	a.logAuthLogin(latestUser)
 	writeJSON(w, http.StatusOK, latestUser)
 }
 
@@ -659,6 +663,7 @@ func (a *app) handleLogout(w http.ResponseWriter, r *http.Request, user User) {
 		methodNotAllowed(w)
 		return
 	}
+	a.addOperationLog(user.ID, "auth.logout", "user", user.ID, fmt.Sprintf("用户 %s 退出登录", user.Username))
 	clearAuthCookie(w)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
@@ -720,6 +725,7 @@ func (a *app) handleMePassword(w http.ResponseWriter, r *http.Request, user User
 	}
 	a.deleteUserSessions(user.ID)
 	clearAuthCookie(w)
+	a.addOperationLog(user.ID, "auth.password_change", "user", user.ID, fmt.Sprintf("用户 %s 修改了密码", user.Username))
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -808,6 +814,7 @@ func (a *app) handleSettings(w http.ResponseWriter, r *http.Request, user User) 
 				return
 			}
 		}
+		a.addOperationLog(user.ID, "settings.update", "settings", 0, "更新了项目配置")
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
 		methodNotAllowed(w)
@@ -898,6 +905,7 @@ func (a *app) handleUsers(w http.ResponseWriter, r *http.Request, user User) {
 			return
 		}
 		id, _ := res.LastInsertId()
+		a.addOperationLog(user.ID, "user.create", "user", id, fmt.Sprintf("创建用户 %s（角色 %s）", req.Username, req.Role))
 		writeJSON(w, http.StatusCreated, map[string]int64{"id": id})
 	default:
 		methodNotAllowed(w)
@@ -922,11 +930,11 @@ func (a *app) handleUserByID(w http.ResponseWriter, r *http.Request, user User) 
 		return
 	}
 	if len(parts) == 2 && parts[1] == "password" {
-		a.handleUserPassword(w, r, id)
+		a.handleUserPassword(w, r, user, id)
 		return
 	}
 	if len(parts) == 3 && parts[1] == "mfa" && parts[2] == "reset" {
-		a.handleUserMFAReset(w, r, id)
+		a.handleUserMFAReset(w, r, user, id)
 		return
 	}
 	if len(parts) != 1 {
@@ -996,6 +1004,7 @@ func (a *app) handleUserByID(w http.ResponseWriter, r *http.Request, user User) 
 			}
 		}
 		a.refreshUserSessions(id)
+		a.addOperationLog(user.ID, "user.update", "user", id, fmt.Sprintf("更新用户 %s（角色 %s）", target.Username, req.Role))
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	case http.MethodDelete:
 		if id == user.ID {
@@ -1011,6 +1020,11 @@ func (a *app) handleUserByID(w http.ResponseWriter, r *http.Request, user User) 
 			badRequest(w, "至少保留一个管理员")
 			return
 		}
+		target, err := a.getUserByID(id)
+		if err != nil {
+			notFound(w)
+			return
+		}
 		res, err := a.db.Exec(`DELETE FROM users WHERE id = ?`, id)
 		if err != nil {
 			serverError(w, err)
@@ -1021,15 +1035,21 @@ func (a *app) handleUserByID(w http.ResponseWriter, r *http.Request, user User) 
 			return
 		}
 		a.deleteUserSessions(id)
+		a.addOperationLog(user.ID, "user.delete", "user", id, fmt.Sprintf("删除用户 %s", target.Username))
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
 		methodNotAllowed(w)
 	}
 }
 
-func (a *app) handleUserMFAReset(w http.ResponseWriter, r *http.Request, id int64) {
+func (a *app) handleUserMFAReset(w http.ResponseWriter, r *http.Request, actor User, id int64) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
+		return
+	}
+	target, err := a.getUserByID(id)
+	if err != nil {
+		notFound(w)
 		return
 	}
 	res, err := a.db.Exec(
@@ -1045,10 +1065,11 @@ func (a *app) handleUserMFAReset(w http.ResponseWriter, r *http.Request, id int6
 		return
 	}
 	a.deleteUserSessions(id)
+	a.addOperationLog(actor.ID, "user.reset_mfa", "user", id, fmt.Sprintf("重置用户 %s 的 MFA", target.Username))
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (a *app) handleUserPassword(w http.ResponseWriter, r *http.Request, id int64) {
+func (a *app) handleUserPassword(w http.ResponseWriter, r *http.Request, actor User, id int64) {
 	if r.Method != http.MethodPut {
 		methodNotAllowed(w)
 		return
@@ -1091,6 +1112,7 @@ func (a *app) handleUserPassword(w http.ResponseWriter, r *http.Request, id int6
 		return
 	}
 	a.deleteUserSessions(id)
+	a.addOperationLog(actor.ID, "user.reset_password", "user", id, fmt.Sprintf("重置用户 %s 的密码", target.Username))
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -1202,6 +1224,7 @@ func (a *app) handleFolders(w http.ResponseWriter, r *http.Request, user User) {
 		return
 	}
 	id, _ := res.LastInsertId()
+	a.addOperationLog(user.ID, "folder.create", "folder", id, fmt.Sprintf("创建文件夹“%s”", req.Name))
 	writeJSON(w, http.StatusCreated, map[string]int64{"id": id})
 }
 
@@ -1235,12 +1258,14 @@ func (a *app) handleFolderByID(w http.ResponseWriter, r *http.Request, user User
 				serverError(w, err)
 				return
 			}
+			a.addOperationLog(user.ID, "folder.update", "folder", id, fmt.Sprintf("重命名文件夹为“%s”", name))
 		}
 		if req.ParentID != nil {
 			if _, err := a.db.Exec(`UPDATE folders SET parent_id = ?, updated_at = datetime('now') WHERE id = ?`, *req.ParentID, id); err != nil {
 				serverError(w, err)
 				return
 			}
+			a.addOperationLog(user.ID, "folder.update", "folder", id, fmt.Sprintf("移动文件夹到父级 %d", *req.ParentID))
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	case http.MethodDelete:
@@ -1257,6 +1282,7 @@ func (a *app) handleFolderByID(w http.ResponseWriter, r *http.Request, user User
 			serverError(w, err)
 			return
 		}
+		a.addOperationLog(user.ID, "folder.delete", "folder", id, fmt.Sprintf("文件夹“%s”已移入回收站", folder.Name))
 		writeJSON(w, http.StatusOK, map[string]string{"message": fmt.Sprintf("文件夹“%s”已移入回收站", folder.Name)})
 	default:
 		methodNotAllowed(w)
@@ -1304,6 +1330,7 @@ func (a *app) handleDocuments(w http.ResponseWriter, r *http.Request, user User)
 		serverError(w, err)
 		return
 	}
+	a.addOperationLog(user.ID, "document.create", "document", id, fmt.Sprintf("创建文档“%s”", req.Title))
 	writeJSON(w, http.StatusCreated, map[string]int64{"id": id})
 }
 
@@ -1362,6 +1389,7 @@ func (a *app) handleDocumentImport(w http.ResponseWriter, r *http.Request, user 
 		"title":   title,
 		"message": fmt.Sprintf("文件“%s”已导入为 Markdown 文档", header.Filename),
 	})
+	a.addOperationLog(user.ID, "document.import", "document", id, fmt.Sprintf("导入文件“%s”为文档“%s”", header.Filename, title))
 }
 
 func (a *app) handleDocumentByID(w http.ResponseWriter, r *http.Request, user User) {
@@ -1458,6 +1486,7 @@ func (a *app) handleDocumentByID(w http.ResponseWriter, r *http.Request, user Us
 			serverError(w, err)
 			return
 		}
+		a.addOperationLog(user.ID, "document.update", "document", id, fmt.Sprintf("保存文档“%s”", title))
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	case http.MethodDelete:
 		if !canWrite(user) {
@@ -1473,6 +1502,7 @@ func (a *app) handleDocumentByID(w http.ResponseWriter, r *http.Request, user Us
 			serverError(w, err)
 			return
 		}
+		a.addOperationLog(user.ID, "document.delete", "document", id, fmt.Sprintf("文档“%s”已移入回收站", doc.Title))
 		writeJSON(w, http.StatusOK, map[string]string{"message": fmt.Sprintf("文档“%s”已移入回收站", doc.Title)})
 	default:
 		methodNotAllowed(w)
@@ -1542,6 +1572,11 @@ func (a *app) handleTrashByID(w http.ResponseWriter, r *http.Request, user User)
 			badRequest(w, err.Error())
 			return
 		}
+		action := "document.restore"
+		if itemType == "folder" {
+			action = "folder.restore"
+		}
+		a.addOperationLog(user.ID, action, itemType, id, message)
 		writeJSON(w, http.StatusOK, map[string]string{"message": message})
 		return
 	}
@@ -1554,6 +1589,11 @@ func (a *app) handleTrashByID(w http.ResponseWriter, r *http.Request, user User)
 		badRequest(w, err.Error())
 		return
 	}
+	action := "document.purge"
+	if itemType == "folder" {
+		action = "folder.purge"
+	}
+	a.addOperationLog(user.ID, action, itemType, id, message)
 	writeJSON(w, http.StatusOK, map[string]string{"message": message})
 }
 
@@ -1612,6 +1652,7 @@ func (a *app) handleUploads(w http.ResponseWriter, r *http.Request, user User) {
 		 VALUES (?, ?, ?, ?, ?, datetime('now'))`,
 		header.Filename, rel, header.Header.Get("Content-Type"), size, user.ID,
 	)
+	a.addOperationLog(user.ID, "upload.create", "attachment", 0, fmt.Sprintf("上传附件“%s”", header.Filename))
 	writeJSON(w, http.StatusCreated, map[string]string{
 		"url":  "/uploads/" + rel,
 		"name": header.Filename,
