@@ -425,7 +425,7 @@ npm install
 npm run build
 
 cd ..
-rm -rf server/public
+rm -rf server/public 
 mkdir -p server/public
 cp -R web/dist/. server/public/
 
