@@ -14,6 +14,7 @@ import {
   getDocument,
   getSettings,
   getTree,
+  importDocument,
   listTrash,
   listUsers,
   login,
@@ -636,6 +637,30 @@ async function createDoc(node = null) {
   await openDocument({ id: result.id, type: 'document', title })
 }
 
+function importFileToFolder(node = null) {
+  if (!canEdit.value) {
+    ElMessage.warning('只读用户不能导入文件')
+    return
+  }
+  const folderId = node?.type === 'folder' ? node.id : 0
+  const input = window.document.createElement('input')
+  input.type = 'file'
+  input.accept = '.md,.markdown,.txt,.log,.csv,.html,.htm,.docx'
+  input.onchange = async () => {
+    const file = input.files?.[0]
+    if (!file) return
+    try {
+      const result = await importDocument(folderId, file)
+      ElMessage.success(result?.message || '文件已导入')
+      await refreshTree()
+      await openDocument({ id: result.id, type: 'document', title: result.title })
+    } catch (error) {
+      ElMessage.error(cleanError(error.message) || '导入失败')
+    }
+  }
+  input.click()
+}
+
 async function renameNode(node) {
   if (!canEdit.value) {
     ElMessage.warning('只读用户不能重命名')
@@ -1115,6 +1140,11 @@ function roleLabel(role) {
                 <el-tooltip v-if="canCreateIn(data)" content="新建文件夹" placement="top" :show-after="80" :hide-after="0">
                   <button aria-label="新建文件夹" @click.stop="createChildFolder(data)">
                     <el-icon><FolderAdd /></el-icon>
+                  </button>
+                </el-tooltip>
+                <el-tooltip v-if="canCreateIn(data)" content="导入文件" placement="top" :show-after="80" :hide-after="0">
+                  <button aria-label="导入文件" @click.stop="importFileToFolder(data)">
+                    <el-icon><Upload /></el-icon>
                   </button>
                 </el-tooltip>
                 <el-tooltip v-if="canEdit && data.type !== 'root'" content="重命名" placement="top" :show-after="80" :hide-after="0">

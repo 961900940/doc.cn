@@ -1,6 +1,8 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha1"
@@ -9,10 +11,13 @@ import (
 	"encoding/base32"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"mime"
@@ -20,6 +25,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -143,6 +149,7 @@ func main() {
 	mux.HandleFunc("/api/folders", a.withAuth(a.handleFolders))
 	mux.HandleFunc("/api/folders/", a.withAuth(a.handleFolderByID))
 	mux.HandleFunc("/api/documents", a.withAuth(a.handleDocuments))
+	mux.HandleFunc("/api/documents/import", a.withAuth(a.handleDocumentImport))
 	mux.HandleFunc("/api/documents/", a.withAuth(a.handleDocumentByID))
 	mux.HandleFunc("/api/trash", a.withAuth(a.handleTrash))
 	mux.HandleFunc("/api/trash/", a.withAuth(a.handleTrashByID))
@@ -1284,6 +1291,63 @@ func (a *app) handleDocuments(w http.ResponseWriter, r *http.Request, user User)
 	writeJSON(w, http.StatusCreated, map[string]int64{"id": id})
 }
 
+func (a *app) handleDocumentImport(w http.ResponseWriter, r *http.Request, user User) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !canWrite(user) {
+		http.Error(w, "只读用户不能导入文档", http.StatusForbidden)
+		return
+	}
+	if err := r.ParseMultipartForm(20 << 20); err != nil {
+		badRequest(w, "导入文件不能超过 20MB")
+		return
+	}
+	folderID, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("folder_id")), 10, 64)
+	if err != nil || folderID < 0 {
+		badRequest(w, "目标文件夹无效")
+		return
+	}
+	if folderID != 0 {
+		if _, err := a.getFolder(folderID, false); err != nil {
+			badRequest(w, "目标文件夹不存在或已被删除")
+			return
+		}
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		badRequest(w, "请选择要导入的文件")
+		return
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, 20<<20+1))
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	if len(data) > 20<<20 {
+		badRequest(w, "导入文件不能超过 20MB")
+		return
+	}
+	title := documentTitleFromFilename(header.Filename)
+	content, err := convertImportToMarkdown(header.Filename, data)
+	if err != nil {
+		badRequest(w, err.Error())
+		return
+	}
+	id, err := a.createDocumentWithContent(folderID, title, content, user.ID)
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"id":      id,
+		"title":   title,
+		"message": fmt.Sprintf("文件“%s”已导入为 Markdown 文档", header.Filename),
+	})
+}
+
 func (a *app) handleDocumentByID(w http.ResponseWriter, r *http.Request, user User) {
 	id, err := parseID(r.URL.Path, "/api/documents/")
 	if err != nil {
@@ -1742,6 +1806,256 @@ func (a *app) getDeletedDocument(id int64) (Document, error) {
 		id,
 	).Scan(&doc.ID, &doc.FolderID, &doc.Title, &doc.FilePath, &doc.SortOrder, &doc.UpdatedAt)
 	return doc, err
+}
+
+func (a *app) createDocumentWithContent(folderID int64, title string, content string, userID int64) (int64, error) {
+	res, err := a.db.Exec(
+		`INSERT INTO documents (folder_id, title, file_path, sort_order, created_by, updated_by, created_at, updated_at)
+		 VALUES (?, ?, '', 0, ?, ?, datetime('now'), datetime('now'))`,
+		folderID, title, userID, userID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	filePath := fmt.Sprintf("doc_%d.md", id)
+	if err := os.WriteFile(filepath.Join(a.docsDir, filePath), []byte(content), 0644); err != nil {
+		return 0, err
+	}
+	if _, err := a.db.Exec(`UPDATE documents SET file_path = ? WHERE id = ?`, filePath, id); err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
+func documentTitleFromFilename(filename string) string {
+	name := strings.TrimSpace(filepath.Base(filename))
+	ext := filepath.Ext(name)
+	if ext != "" {
+		name = strings.TrimSuffix(name, ext)
+	}
+	name = strings.TrimSpace(name)
+	if name == "" || name == "." {
+		return "导入文档"
+	}
+	return name
+}
+
+func convertImportToMarkdown(filename string, data []byte) (string, error) {
+	title := documentTitleFromFilename(filename)
+	ext := strings.ToLower(filepath.Ext(filename))
+	switch ext {
+	case ".md", ".markdown":
+		content := normalizeImportedText(string(data))
+		if strings.TrimSpace(content) == "" {
+			return "# " + title + "\n", nil
+		}
+		return content, nil
+	case ".txt", ".log":
+		content := strings.TrimSpace(normalizeImportedText(string(data)))
+		if content == "" {
+			return "# " + title + "\n", nil
+		}
+		return "# " + title + "\n\n" + content + "\n", nil
+	case ".csv":
+		content, err := csvToMarkdownTable(data)
+		if err != nil {
+			return "", err
+		}
+		if strings.TrimSpace(content) == "" {
+			content = "_空 CSV 文件_"
+		}
+		return "# " + title + "\n\n" + content + "\n", nil
+	case ".html", ".htm":
+		content := strings.TrimSpace(htmlToMarkdownText(string(data)))
+		if content == "" {
+			content = "_HTML 文件没有可导入的文本内容_"
+		}
+		return "# " + title + "\n\n" + content + "\n", nil
+	case ".docx":
+		content, err := docxToMarkdown(data)
+		if err != nil {
+			return "", err
+		}
+		if strings.TrimSpace(content) == "" {
+			content = "_DOCX 文件没有可导入的文本内容_"
+		}
+		return "# " + title + "\n\n" + content + "\n", nil
+	case ".doc":
+		return "", errors.New("暂不支持旧版 .doc 格式，请先另存为 .docx 后再导入")
+	case ".pdf":
+		return "", errors.New("暂不支持 PDF 自动转 Markdown，建议先复制正文为 .txt 或 .md 后导入")
+	case ".xls", ".xlsx":
+		return "", errors.New("暂不支持 Excel 自动转 Markdown，建议先另存为 .csv 后导入")
+	default:
+		return "", errors.New("暂不支持该文件格式，当前支持 md、txt、log、csv、html、docx")
+	}
+}
+
+func normalizeImportedText(text string) string {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	return strings.TrimPrefix(text, "\ufeff")
+}
+
+func csvToMarkdownTable(data []byte) (string, error) {
+	reader := csv.NewReader(bytes.NewReader(data))
+	reader.FieldsPerRecord = -1
+	records, err := reader.ReadAll()
+	if err != nil {
+		return "", errors.New("CSV 文件解析失败，请检查文件格式")
+	}
+	if len(records) == 0 {
+		return "", nil
+	}
+	width := 0
+	for _, row := range records {
+		if len(row) > width {
+			width = len(row)
+		}
+	}
+	if width == 0 {
+		return "", nil
+	}
+	var b strings.Builder
+	writeRow := func(row []string) {
+		b.WriteString("|")
+		for i := 0; i < width; i++ {
+			cell := ""
+			if i < len(row) {
+				cell = row[i]
+			}
+			b.WriteString(" ")
+			b.WriteString(escapeMarkdownTableCell(cell))
+			b.WriteString(" |")
+		}
+		b.WriteString("\n")
+	}
+	writeRow(records[0])
+	b.WriteString("|")
+	for i := 0; i < width; i++ {
+		b.WriteString(" --- |")
+	}
+	b.WriteString("\n")
+	for _, row := range records[1:] {
+		writeRow(row)
+	}
+	return b.String(), nil
+}
+
+func escapeMarkdownTableCell(value string) string {
+	value = strings.TrimSpace(normalizeImportedText(value))
+	value = strings.ReplaceAll(value, "|", "\\|")
+	value = strings.ReplaceAll(value, "\n", "<br>")
+	return value
+}
+
+func htmlToMarkdownText(raw string) string {
+	text := normalizeImportedText(raw)
+	replacements := []struct {
+		pattern string
+		value   string
+	}{
+		{`(?is)<\s*br\s*/?\s*>`, "\n"},
+		{`(?is)</\s*p\s*>`, "\n\n"},
+		{`(?is)</\s*div\s*>`, "\n"},
+		{`(?is)</\s*h[1-6]\s*>`, "\n\n"},
+		{`(?is)<\s*li[^>]*>`, "- "},
+		{`(?is)</\s*li\s*>`, "\n"},
+		{`(?is)<\s*script[^>]*>.*?</\s*script\s*>`, ""},
+		{`(?is)<\s*style[^>]*>.*?</\s*style\s*>`, ""},
+		{`(?is)<[^>]+>`, ""},
+	}
+	for _, item := range replacements {
+		text = regexp.MustCompile(item.pattern).ReplaceAllString(text, item.value)
+	}
+	text = html.UnescapeString(text)
+	return compactBlankLines(text)
+}
+
+func docxToMarkdown(data []byte) (string, error) {
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return "", errors.New("DOCX 文件解析失败，请确认文件未损坏")
+	}
+	var documentFile *zip.File
+	for _, file := range reader.File {
+		if file.Name == "word/document.xml" {
+			documentFile = file
+			break
+		}
+	}
+	if documentFile == nil {
+		return "", errors.New("DOCX 文件缺少正文内容")
+	}
+	rc, err := documentFile.Open()
+	if err != nil {
+		return "", err
+	}
+	defer rc.Close()
+	decoder := xml.NewDecoder(rc)
+	var b strings.Builder
+	needSpace := false
+	for {
+		token, err := decoder.Token()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return "", errors.New("DOCX 正文解析失败")
+		}
+		switch item := token.(type) {
+		case xml.StartElement:
+			switch item.Name.Local {
+			case "t":
+				var value string
+				if err := decoder.DecodeElement(&value, &item); err != nil {
+					return "", errors.New("DOCX 文本解析失败")
+				}
+				if needSpace && strings.TrimSpace(value) != "" {
+					b.WriteString(" ")
+				}
+				b.WriteString(value)
+				needSpace = false
+			case "tab":
+				b.WriteString(" ")
+			case "br":
+				b.WriteString("\n")
+			}
+		case xml.EndElement:
+			if item.Name.Local == "p" {
+				b.WriteString("\n\n")
+				needSpace = false
+			} else if item.Name.Local == "r" {
+				needSpace = true
+			}
+		}
+	}
+	return compactBlankLines(b.String()), nil
+}
+
+func compactBlankLines(text string) string {
+	lines := strings.Split(normalizeImportedText(text), "\n")
+	var b strings.Builder
+	blank := 0
+	for _, line := range lines {
+		line = strings.TrimRight(line, " \t")
+		if strings.TrimSpace(line) == "" {
+			blank++
+			if blank > 1 {
+				continue
+			}
+			b.WriteString("\n")
+			continue
+		}
+		blank = 0
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	return strings.TrimSpace(b.String()) + "\n"
 }
 
 func (a *app) softDeleteFolderTree(id int64) error {

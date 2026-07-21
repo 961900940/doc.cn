@@ -142,6 +142,9 @@ data/
 - 根节点下新建文档
 - 文件夹下新建子文件夹
 - 文件夹下新建文档
+- 文件夹和根节点支持导入文件，导入后自动创建 Markdown 文档
+- 导入支持 `.md`、`.markdown`、`.txt`、`.log`、`.csv`、`.html`、`.htm`、`.docx`
+- 暂不支持 PDF、旧版 `.doc`、Excel 自动转 Markdown，会返回明确提示
 - 左侧树拖拽排序
 - 文件夹和文档可以拖入文件夹，只有拖到文件夹中间区域才会进入文件夹
 - 文件夹重命名
@@ -285,6 +288,7 @@ DELETE /api/folders/:id
 
 ```text
 POST   /api/documents
+POST   /api/documents/import
 GET    /api/documents/:id
 PUT    /api/documents/:id
 DELETE /api/documents/:id
@@ -468,6 +472,7 @@ go build -o doc-system .
 - Mermaid 渲染
 - 代码高亮
 - 文档大纲
+- PDF / Excel / 旧版 doc 导入转换
 - 自动保存草稿
 - 正文全文搜索
 - 标签

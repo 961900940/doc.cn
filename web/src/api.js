@@ -145,6 +145,16 @@ export function createDocument(folderId, title) {
   })
 }
 
+export function importDocument(folderId, file) {
+  const data = new FormData()
+  data.append('folder_id', String(folderId))
+  data.append('file', file)
+  return api('/api/documents/import', {
+    method: 'POST',
+    body: data
+  })
+}
+
 export function getDocument(id) {
   return api(`/api/documents/${id}`)
 }
