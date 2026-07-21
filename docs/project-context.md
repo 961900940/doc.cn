@@ -327,6 +327,119 @@ GET /api/search?q=关键词
 GET /api/operation-logs?page=1&page_size=20&action=&q=
 ```
 
+## 权限、认证与安全设计
+
+### 角色权限
+
+系统当前有三种角色：
+
+```text
+admin   管理员：可管理用户、查看全部操作日志，可创建、编辑、删除文档和文件夹
+editor  编辑者：可创建、编辑、删除文档和文件夹，可查看自己的操作日志，不能管理用户
+viewer  只读用户：只能查看目录和文档内容，可查看自己的操作日志
+```
+
+权限不仅在前端隐藏按钮，也在后端接口中拦截。
+
+`viewer` 访问以下写操作会返回 `403`：
+
+- 保存文档
+- 创建 / 删除文档
+- 创建 / 修改 / 删除文件夹
+- 调整目录树
+- 上传附件
+
+管理员限制：
+
+- 初始化 `admin` 用户默认昵称为“超级管理员”
+- `admin` 用户不允许在用户管理中修改角色
+- `admin` 用户不允许在用户管理中被重置密码，只能当前登录的 admin 自己修改密码
+- 不能删除当前登录用户
+- 不能移除最后一个管理员
+- 普通管理员角色可以管理用户，但不能查看或修改“项目配置”
+- 只有初始化超级管理员 `admin` 可以访问 `/api/settings`
+
+### JWT 登录状态
+
+当前登录状态使用 JWT，不再使用服务端内存 session。
+
+- 登录成功后后端写入 `doc_token` HttpOnly Cookie
+- JWT 使用 HS256 签名
+- JWT 签名密钥 `jwt_secret` 存在本地 SQLite 的 `app_settings` 表中，首次启动自动生成
+- JWT 有效期默认 1 天，可在项目配置中调整（1～90 天），修改后仅对新登录生效
+- JWT 内容包含用户 id、用户名、`token_version`、签发时间和过期时间
+- 每次鉴权都会按 JWT 中的用户 id 重新读取数据库里的当前用户角色、MFA 状态和强制改密状态
+- 未开启 MFA：账号密码验证成功后立即下发 `doc_token`
+- 开启 MFA：账号密码验证成功后只返回 MFA challenge，不下发 token；MFA 验证码验证成功后才下发 `doc_token`
+- 用户自己修改密码、管理员重置用户密码后，会递增该用户的 `token_version`，旧 JWT 立即失效
+- 退出登录会清理 `doc_token` Cookie；旧版 `doc_session` Cookie 也会被兼容清理
+
+JWT 保存位置：
+
+- JWT 生成后不保存到服务端数据库
+- 后端通过 `Set-Cookie` 写入浏览器 Cookie
+- Cookie 名称是 `doc_token`
+- `doc_token` 设置为 `HttpOnly`，前端 JavaScript 不能直接读取
+- 服务端真正保存的是 `app_settings.jwt_secret` 和 `users.token_version`
+
+后续请求验证流程：
+
+```text
+浏览器请求接口
+    |
+    | Cookie: doc_token=xxx
+    v
+后端读取 doc_token
+    |
+    v
+校验 JWT 签名
+    |
+    v
+检查 JWT 是否过期
+    |
+    v
+根据 JWT 里的用户 id 查询数据库用户
+    |
+    v
+比较 JWT 中的 token_version 和数据库中的 token_version
+    |
+    v
+验证通过后进入业务接口
+```
+
+旧登录失效机制：
+
+- 用户自己修改密码后，后端会递增该用户的 `token_version`
+- 管理员重置用户密码后，后端也会递增该用户的 `token_version`
+- 旧 JWT 里的 `token_version` 和数据库不一致时，请求会返回登录失效
+- 这种方式不需要服务端保存每一个 token，也能让旧登录状态立即失效
+
+### MFA
+
+- MFA 使用 TOTP
+- 未绑定 MFA 的用户首次通过账号密码后，会显示二维码和手动密钥
+- 用户扫描绑定后输入 6 位验证码，校验成功才登录
+- 已绑定 MFA 的用户后续登录只需要输入验证码
+- MFA 验证码输入框自动聚焦，输入 6 位后自动提交
+- MFA 失败限制默认是 120 秒内 5 次，可在项目配置中调整
+- 达到失败上限后，会返回账号密码登录页面
+
+MFA 技术实现：
+
+- MFA 验证码本身没有使用专门的第三方 TOTP 库，是后端在 `server/main.go` 里按 TOTP 标准实现的
+- 第三方库 `github.com/skip2/go-qrcode` 只用于生成 MFA 绑定时扫码用的二维码
+- TOTP 验证码生成和校验使用 Go 标准库：`crypto/hmac`、`crypto/sha1`、`encoding/base32`、`encoding/binary`
+- 兼容 Google Authenticator、Microsoft Authenticator、Aegis、2FAS 等标准 TOTP 认证器 App
+- 不依赖外部 MFA 服务，也不会把 MFA 数据上传到第三方
+
+### 密码规则
+
+- 管理员新建用户和重置密码只要求基础长度，便于快速创建账号
+- 用户自己修改密码时必须至少 8 位
+- 用户自己修改密码时，字母 / 数字 / 特殊符号至少包含 2 种
+- 用户自己修改密码时，新密码不能和当前密码一致
+- 管理员重置密码后，该用户下次登录成功后必须先修改密码
+
 ## 运行方式
 
 ### 后端开发运行
