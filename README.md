@@ -96,14 +96,24 @@ SQLite + Markdown 文件 + 本地 uploads
 - `server/public/`：生产构建时由 `web/dist` 复制生成
 - `server/doc-system`：执行 `go build` 后生成的后端可执行文件
 
-### 方式一：本地开发启动
+### 方式一：本地开发环境启动
+本地开发适合改页面、改接口、调试功能。前端和后端分开启动。
 
-启动后端：
+#### 1.安装依赖，只需要首次执行，或依赖文件变化后再执行：
 
 ```bash
-cd server
-GOPROXY=https://goproxy.cn,direct go mod download
-go run .
+cd /path/to/doc.cn/server
+go mod download
+
+cd /path/to/doc.cn/web
+npm install
+```
+
+#### 2.启动后端服务：
+
+```text
+cd /path/to/doc.cn/server
+DOC_ADDR=:8080 DOC_DATA_DIR=../data go run .
 ```
 
 后端默认地址：
@@ -112,11 +122,10 @@ go run .
 http://localhost:8080
 ```
 
-启动前端开发服务：
+#### 3.启动前端开发服务：
 
 ```bash
-cd web
-npm install
+cd /path/to/doc.cn/web
 npm run dev
 ```
 
@@ -126,9 +135,18 @@ npm run dev
 http://localhost:5173
 ```
 
-Vite 会把 `/api` 和 `/uploads` 代理到后端 `localhost:8080`。
+本地开发时浏览器访问 http://localhost:5173。Vite 会把 /api、/uploads 自动代理到 localhost:8080。
 
-本地开发特点：
+#### 4.首次安装向导怎么出现：
+
+如果 /path/to/doc.cn/data/app.db 里没有任何用户，打开页面后会进入首次安装向导。
+
+如果你已有 data/app.db，说明系统已经初始化过，不会再出现向导。
+
+想重新测试首次安装向导，不要删正式数据，可以用临时数据目录：
+
+
+#### 5.本地开发特点：
 
 - 前端和后端分开运行
 - 浏览器访问 `http://localhost:5173`
@@ -136,24 +154,53 @@ Vite 会把 `/api` 和 `/uploads` 代理到后端 `localhost:8080`。
 - 不会生成 `server/doc-system`
 - 适合日常开发、接口调试、页面调试
 
-### 方式二：生产构建后启动
+### 方式二：本地生产构建后启动
 
-在项目根目录执行：
+这个方式更接近你之前常用的 localhost:8080，不用单独启动前端 dev server。
+
+#### 1.构建前端并复制到后端：
 
 ```bash
+cd /path/to/doc.cn
 make web-build
+```
+
+这个命令会执行：
+
+```bash
+cd web && npm run build
+rm -rf server/public
+mkdir -p server/public
+cp -R web/dist/. server/public/
+```
+
+也就是把 Vue 前端打包后放进 server/public，由 Go 后端直接托管。
+
+
+#### 2.编译后端：
+
+```bash
+cd /path/to/doc.cn
 make server-build
-cd server
+```
+
+会生成：
+```bash
+server/doc-system
+```
+
+#### 3.启动服务：
+
+```bash
+cd /path/to/doc.cn/server
 DOC_ADDR=:8080 DOC_DATA_DIR=../data ./doc-system
 ```
 
-然后访问：
+浏览器访问：
 
-```text
-http://localhost:8080
-```
+这种方式下不需要执行 npm run dev。
 
-生产运行特点：
+#### 4.生产运行特点：
 
 - 先构建前端，再编译 Go 后端
 - 前端构建产物复制到 `server/public/`
@@ -161,7 +208,26 @@ http://localhost:8080
 - 浏览器访问 Go 服务地址，例如 `http://服务器IP:8080`
 - 不需要运行 `npm run dev`
 
-什么时候不需要 Go 编译：
+
+
+### 什么时候需要安装依赖
+
+需要执行 npm install 的情况：
+```php
+第一次拉项目
+web/package.json 或 package-lock.json 变化后
+node_modules 被删除后
+```
+
+需要执行 go mod download 的情况：
+```php
+第一次拉项目
+server/go.mod 或 server/go.sum 变化后
+Go 依赖缓存被清理后
+```
+平时改业务代码，不一定每次都要重新安装依赖。
+
+### 什么时候不需要 Go 编译：
 
 - 本地开发
 - 快速验证后端代码
@@ -174,8 +240,9 @@ http://localhost:8080
 cd server
 go run .
 ```
+不需要手动 go build，Go 会临时编译并运行。
 
-什么时候需要 Go 编译：
+### 什么时候需要 Go 编译：
 
 - 线上部署
 - 长期后台运行
@@ -190,9 +257,24 @@ go build -o doc-system .
 DOC_ADDR=:8080 DOC_DATA_DIR=../data ./doc-system
 ```
 
-## 安装 / 部署
+需要编译，生成稳定的可执行文件 doc-system，再用 ./doc-system 运行。
 
-环境要求：
+前端代码改了，线上必须重新执行：
+```bash
+make web-build
+```
+
+后端代码改了，线上必须重新执行：
+```bash
+make server-build
+```
+前后端都改了，就两个都执行，然后重启服务。
+
+### 线上 安装 / 部署 流程
+
+线上推荐用“生产式启动”：只运行一个 Go 服务。
+
+#### 1.环境要求-服务器需要安装：
 
 - Go 1.22+
 - Node.js 18+
@@ -203,6 +285,86 @@ DOC_ADDR=:8080 DOC_DATA_DIR=../data ./doc-system
 ```bash
 go env -w GOPROXY=https://goproxy.cn,direct
 ```
+
+#### 2.首次拉代码：
+
+```bash
+git clone <你的仓库地址> doc.cn
+cd doc.cn
+```
+
+#### 3.安装依赖：
+
+```bash
+cd web
+npm install
+```
+
+```bash
+cd ../server
+go mod download
+```
+
+#### 4.构建前端：
+
+```bash
+cd /path/to/doc.cn
+make web-build
+```
+
+#### 5.编译后端：
+
+```bash
+make server-build
+```
+
+#### 6.启动线上服务：
+
+```bash
+cd /path/to/doc.cn/server
+DOC_ADDR=:8080 DOC_DATA_DIR=../data ./doc-system
+```
+
+访问：
+```text
+http://服务器IP:8080
+```
+
+如果你绑定了域名，可以用 Nginx 反向代理到 127.0.0.1:8080。
+
+#### 7. 线上首次安装向导
+
+线上第一次部署时，如果 data/app.db 不存在或 users 表为空：
+
+* 不设置 DOC_ADMIN_PASSWORD：第一次访问系统会进入安装向导。
+* 设置 DOC_ADMIN_PASSWORD：服务启动时自动创建 admin，跳过安装向导。
+
+例如：
+```bash
+cd /path/to/doc.cn/server
+DOC_ADDR=:8080 DOC_DATA_DIR=../data DOC_ADMIN_PASSWORD='Admin123!' ./doc-system
+```
+
+自动创建：
+
+```bash
+用户名：admin
+昵称：超级管理员
+密码：DOC_ADMIN_PASSWORD 的值
+```
+
+已有系统升级部署时，只要原来的 data/app.db 还在，并且已有用户，就不会进入安装向导。
+
+#### 8. 一个关键注意点
+当前后端静态目录写的是相对路径 public，所以线上运行时建议一定进入 server 目录再启动：
+```bash
+cd /path/to/doc.cn/server
+DOC_ADDR=:8080 DOC_DATA_DIR=../data ./doc-system
+```
+
+否则可能找不到 server/public，导致页面打不开。
+
+
 
 首次部署步骤：
 
@@ -233,90 +395,6 @@ cd server
 DOC_ADDR=:8080 DOC_DATA_DIR=../data ./doc-system
 ```
 
-常用环境变量：
-
-```text
-DOC_ADDR=:8080              # 服务监听地址
-DOC_DATA_DIR=../data        # 数据目录
-DOC_ADMIN_PASSWORD=...      # 可选：设置后首次启动自动创建 admin，跳过安装向导
-```
-
-首次启动会自动：
-
-- 创建 SQLite 表
-- 创建数据目录
-- 生成 JWT 签名密钥 `jwt_secret`
-
-若未设置 `DOC_ADMIN_PASSWORD`，打开系统后会进入**首次安装初始化向导**，用于：
-
-- 设置项目名称
-- 创建超级管理员 `admin`（自定义昵称与密码）
-- 配置 JWT 登录有效期、新用户强制改密等基础项
-
-完成后会自动登录进入系统。管理员密码要求至少 8 位，且字母 / 数字 / 特殊符号至少包含 2 种。
-
-若已设置 `DOC_ADMIN_PASSWORD`，则首次启动会自动创建管理员并跳过向导：
-
-```text
-用户名：admin
-昵称：超级管理员
-密码：环境变量 DOC_ADMIN_PASSWORD 的值
-```
-
-说明：
-
-- 当前版本不强制 Docker 部署。
-- SQLite 文件、Markdown 文件和 uploads 目录都在本地，部署时需要保留 `data/` 目录。
-- 如果要迁移服务器，复制项目代码和 `data/` 目录即可。
-
-## 后续修改代码如何操作
-
-后端代码修改后：
-
-```bash
-cd server
-go fmt ./...
-go build -o doc-system .
-```
-
-前端代码修改后：
-
-```bash
-cd web
-npm run build
-```
-
-把前端构建产物复制给后端托管：
-
-```bash
-cd ..
-rm -rf server/public
-mkdir -p server/public
-cp -R web/dist/. server/public/
-```
-
-推荐直接使用：
-
-```bash
-make web-build
-make server-build
-```
-
-重启服务：
-
-```bash
-cd server
-DOC_ADDR=:8080 DOC_DATA_DIR=../data ./doc-system
-```
-
-如果 Go 默认缓存目录无权限，可以使用项目内缓存：
-
-```bash
-cd server
-GOCACHE=/Users/ck/web/datao/doc.cn/.cache/go-build \
-GOMODCACHE=/Users/ck/web/datao/doc.cn/.cache/go-mod \
-go build -o doc-system .
-```
 
 ## 推送到 Git 前处理
 
@@ -332,20 +410,6 @@ go build -o doc-system .
 
 如果新拉取的项目里已经有 `data/app.db`、`data/docs/`、`data/uploads/`，说明本地运行数据可能被提交到了 Git。推广给别人使用时不建议提交这些文件，因为里面可能包含用户、密码哈希、JWT 密钥、MFA 配置、公司文档和上传附件。
 
-应该提交：
-
-- `README.md`
-- `docs/project-context.md`
-- `Makefile`
-- `server/go.mod`
-- `server/go.sum`
-- `server/main.go`
-- `web/package.json`
-- `web/package-lock.json`
-- `web/index.html`
-- `web/vite.config.js`
-- `web/src/`
-- `.gitignore`
 
 不应该提交：
 
@@ -358,72 +422,7 @@ go build -o doc-system .
 - `.idea/`：本地 IDE 配置
 - `*.log`、`*.tmp`、`*-副本.*` 等本地临时文件
 
-初始化 Git 仓库：
 
-```bash
-git init
-git add .
-git status
-git commit -m "init doc system"
-```
-
-推送到远程仓库：
-
-```bash
-git remote add origin <your-git-repo-url>
-git branch -M main
-git push -u origin main
-```
-
-推送前建议确认：
-
-- `git status` 中没有 `data/`
-- `git status` 中没有 `web/node_modules/`
-- `git status` 中没有 `web/dist/`
-- `git status` 中没有 `server/public/`
-- `git status` 中没有 `server/doc-system`
-- 默认管理员密码由安装向导或 `DOC_ADMIN_PASSWORD` 设定，不要把真实生产密码写入仓库
-
-## 基础使用
-
-1. 首次打开系统时，若尚未初始化，先完成**安装向导**（设置项目名称与 admin 密码）。
-
-已完成初始化后，使用超级管理员登录：
-
-```text
-用户名：admin
-密码：安装时设置的管理员密码
-```
-
-2. 进入系统后默认展示知识库说明页。
-
-说明页会展示系统目的、适合记录的内容、当前项目架构和建议目录。
-
-3. 在左侧知识库树中管理目录。
-
-支持新建文件夹、新建文档、文件夹重命名、文件夹软删除、文档软删除、拖拽排序。
-
-4. 在右侧编辑 Markdown 文档。
-
-支持编辑、分屏、预览三种模式。编辑区支持 `Ctrl + S` / `Cmd + S` 快捷键保存。
-
-5. 上传图片或附件。
-
-上传后会自动插入 Markdown 链接。
-
-6. 使用标题搜索。
-
-搜索框在左侧知识库树上方，只搜索文档标题。搜索结果在左侧展示，无结果时显示空状态提示。
-
-7. 管理用户。
-
-管理员可以在右上角用户菜单进入“用户管理”，支持新建用户、编辑用户、重置密码、开启 / 关闭 MFA、重置 MFA、删除用户、分页和按用户名搜索。一般可以直接使用手机号作为用户名。
-
-管理员还可以在用户菜单进入“操作日志”，查看审计记录；管理员可看全部用户，其他用户只能看自己的记录，支持按操作类型和关键词筛选。
-
-8. 配置项目。
-
-只有初始化超级管理员 `admin` 可以看到“项目配置”。可配置项目名称、新用户首次登录强制改密、MFA 失败限制、JWT 登录有效期。
 
 ## 角色权限
 

@@ -1272,7 +1272,7 @@ function roleLabel(role) {
     <section class="login-panel setup-panel">
       <div>
         <h1>首次安装向导</h1>
-        <p>创建超级管理员并完成基础配置后即可开始使用。</p>
+        <p>创建超级管理员并完成基础配置后即可开始使用，可在安装后于项目配置中修改。</p>
       </div>
       <el-form label-position="top" @submit.prevent="submitSetup">
         <el-form-item label="项目名称">
@@ -1314,7 +1314,6 @@ function roleLabel(role) {
         <el-form-item label="新用户首次登录强制改密">
           <div class="setup-switch-row">
             <el-switch v-model="setupForm.force_password_change_new_users" />
-            <span class="form-tip">可在安装后于项目配置中修改。</span>
           </div>
         </el-form-item>
         <el-alert v-if="setupError" :title="setupError" type="error" :closable="false" />
