@@ -49,6 +49,9 @@ var operationActionLabels = map[string]string{
 	"document.purge":           "永久删除文档",
 	"document.restore_version": "恢复历史版本",
 	"upload.create":            "上传附件",
+	"export.knowledge_base":    "导出知识库",
+	"export.document":          "导出文档",
+	"export.folder":            "导出文件夹",
 }
 
 func operationActionLabel(action string) string {
@@ -83,6 +86,9 @@ func listOperationActionOptions() []OperationActionOption {
 		"document.purge",
 		"document.restore_version",
 		"upload.create",
+		"export.knowledge_base",
+		"export.document",
+		"export.folder",
 	}
 	items := make([]OperationActionOption, 0, len(order))
 	for _, value := range order {

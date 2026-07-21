@@ -9,6 +9,9 @@ import {
   deleteDocument,
   deleteFolder,
   deleteUser,
+  exportDocumentFile,
+  exportFolderFile,
+  exportKnowledgeBase,
   getAppConfig,
   getDocument,
   getDocumentVersion,
@@ -72,6 +75,7 @@ const mfaChallenge = ref(null)
 const mfaForm = ref({ code: '' })
 const loading = ref(false)
 const loggingOut = ref(false)
+const exportLoading = ref(false)
 const users = ref([])
 const usersLoading = ref(false)
 const usersTotal = ref(0)
@@ -363,6 +367,71 @@ async function openOperationLogs() {
   logsDialogVisible.value = true
   logsPage.value = 1
   await loadOperationLogs()
+}
+
+async function exportAllDocuments() {
+  try {
+    await ElMessageBox.confirm(
+      '将导出全部未删除文档和本地上传附件，生成 ZIP 文件。是否继续？',
+      '一键导出知识库',
+      {
+        confirmButtonText: '导出',
+        cancelButtonText: '取消',
+        type: 'info'
+      }
+    )
+  } catch {
+    return
+  }
+  exportLoading.value = true
+  try {
+    const result = await exportKnowledgeBase()
+    downloadBlob(result.blob, result.filename || 'doc-system-export.zip')
+    ElMessage.success('知识库导出已开始下载')
+  } catch (error) {
+    ElMessage.error(cleanError(error.message) || '导出失败')
+  } finally {
+    exportLoading.value = false
+  }
+}
+
+async function exportCurrentDocument(format) {
+  if (!document.value?.id) return
+  exportLoading.value = true
+  try {
+    const result = await exportDocumentFile(document.value.id, format)
+    downloadBlob(result.blob, result.filename || `${document.value.title}.${format}`)
+    ElMessage.success('文档导出已开始下载')
+  } catch (error) {
+    ElMessage.error(cleanError(error.message) || '导出失败')
+  } finally {
+    exportLoading.value = false
+  }
+}
+
+async function exportActiveFolder(format) {
+  if (!activeNode.value?.id || activeNode.value.type !== 'folder') return
+  exportLoading.value = true
+  try {
+    const result = await exportFolderFile(activeNode.value.id, format)
+    downloadBlob(result.blob, result.filename || `${activeNode.value.title}.zip`)
+    ElMessage.success('文件夹导出已开始下载')
+  } catch (error) {
+    ElMessage.error(cleanError(error.message) || '导出失败')
+  } finally {
+    exportLoading.value = false
+  }
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob)
+  const link = window.document.createElement('a')
+  link.href = url
+  link.download = filename
+  window.document.body.appendChild(link)
+  link.click()
+  window.document.body.removeChild(link)
+  URL.revokeObjectURL(url)
 }
 
 async function loadOperationLogs() {
@@ -1449,6 +1518,14 @@ function roleLabel(role) {
                 <el-dropdown-item :icon="'Notebook'" @click="openOperationLogs">
                   操作日志
                 </el-dropdown-item>
+                <el-dropdown-item
+                  v-if="user.role === 'admin'"
+                  :icon="'Download'"
+                  :disabled="exportLoading"
+                  @click="exportAllDocuments"
+                >
+                  {{ exportLoading ? '正在导出...' : '一键导出' }}
+                </el-dropdown-item>
                 <el-dropdown-item v-if="user.role === 'admin'" :icon="'User'" @click="openUserManager">
                   用户管理
                 </el-dropdown-item>
@@ -1564,6 +1641,16 @@ function roleLabel(role) {
                 大纲
               </el-button>
               <el-button :icon="'Clock'" @click="openHistoryDialog">历史</el-button>
+              <el-dropdown trigger="click" :disabled="exportLoading" @command="exportCurrentDocument">
+                <el-button :icon="'Download'" :loading="exportLoading">导出</el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="md">Markdown (.md)</el-dropdown-item>
+                    <el-dropdown-item command="html">HTML (.html)</el-dropdown-item>
+                    <el-dropdown-item command="pdf">PDF (.pdf)</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
               <el-button v-if="canEdit" :icon="'Upload'" @click="fileInput.click()">上传</el-button>
               <el-button v-if="canEdit" type="primary" :loading="saving" :icon="'Check'" @click="saveCurrent">保存</el-button>
             </div>
@@ -1707,8 +1794,20 @@ function roleLabel(role) {
 
           <section class="folder-contents">
             <div class="folder-contents-header">
-              <h2>本文件夹内容</h2>
-              <span>{{ folderChildren.length }} 项</span>
+              <div>
+                <h2>本文件夹内容</h2>
+                <span>{{ folderChildren.length }} 项</span>
+              </div>
+              <el-dropdown trigger="click" :disabled="exportLoading" @command="exportActiveFolder">
+                <el-button :icon="'Download'" :loading="exportLoading">导出文件夹</el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="md">导出为 Markdown ZIP</el-dropdown-item>
+                    <el-dropdown-item command="html">导出为 HTML ZIP</el-dropdown-item>
+                    <el-dropdown-item command="pdf">导出为 PDF ZIP</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </div>
 
             <div v-if="folderChildren.length" class="folder-contents-list">

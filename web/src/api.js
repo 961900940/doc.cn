@@ -22,6 +22,35 @@ export async function api(path, options = {}) {
   return response.json()
 }
 
+export async function downloadFile(path) {
+  const response = await fetch(path, { credentials: 'include' })
+  if (!response.ok) {
+    const text = await response.text()
+    const error = new Error(text || `HTTP ${response.status}`)
+    error.status = response.status
+    throw error
+  }
+  const blob = await response.blob()
+  return {
+    blob,
+    filename: filenameFromDisposition(response.headers.get('content-disposition')) || 'download.zip'
+  }
+}
+
+function filenameFromDisposition(value) {
+  if (!value) return ''
+  const encoded = value.match(/filename\*=UTF-8''([^;]+)/i)
+  if (encoded?.[1]) {
+    try {
+      return decodeURIComponent(encoded[1])
+    } catch {
+      return encoded[1]
+    }
+  }
+  const plain = value.match(/filename="?([^";]+)"?/i)
+  return plain?.[1] || ''
+}
+
 export function login(username, password) {
   return api('/api/login', {
     method: 'POST',
@@ -50,6 +79,20 @@ export function getAppConfig() {
 
 export function getSetupStatus() {
   return api('/api/setup/status')
+}
+
+export function exportKnowledgeBase() {
+  return downloadFile('/api/export')
+}
+
+export function exportDocumentFile(id, format) {
+  const query = new URLSearchParams({ format })
+  return downloadFile(`/api/export/documents/${id}?${query.toString()}`)
+}
+
+export function exportFolderFile(id, format) {
+  const query = new URLSearchParams({ format })
+  return downloadFile(`/api/export/folders/${id}?${query.toString()}`)
 }
 
 export function completeSetup(payload) {

@@ -891,10 +891,16 @@ textarea {
 
 .folder-contents-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 12px;
+}
+
+.folder-contents-header > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
 }
 
 .folder-contents-header h2 {

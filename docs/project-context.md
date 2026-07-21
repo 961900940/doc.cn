@@ -170,6 +170,8 @@ data/
 - 回收站恢复文档和文件夹
 - 回收站永久删除文档和文件夹
 - 操作日志：登录用户可查看；管理员看全部，其他用户仅看自己的记录；支持筛选
+- 管理员一键导出整套知识库 ZIP，包含 Markdown 文档、文件夹结构和本地上传附件
+- 单篇文档支持导出为 Markdown、HTML、PDF；单个文件夹支持按 Markdown、HTML、PDF 格式导出 ZIP
 - Markdown 编辑
 - Markdown 预览
 - 编辑 / 分屏 / 预览模式切换
@@ -326,6 +328,27 @@ GET /api/search?q=关键词
 ```text
 GET /api/operation-logs?page=1&page_size=20&action=&q=
 ```
+
+导出：
+
+```text
+GET /api/export                              # 整库 ZIP，仅管理员可访问
+GET /api/export/documents/:id?format=md      # 单篇文档，format 支持 md/html/pdf
+GET /api/export/folders/:id?format=md        # 单个文件夹 ZIP，format 支持 md/html/pdf
+```
+
+整库 ZIP 导出内容：
+
+- `知识库/`：按左侧文件夹树组织的 Markdown 文档
+- `uploads/`：本地上传的图片和附件
+- `README.md`：导出包说明
+- `manifest.json`：导出时间、文件夹数量、文档数量、附件数量等统计
+
+单篇 / 文件夹导出说明：
+
+- 单篇文档直接下载 `.md`、`.html` 或 `.pdf`
+- 单个文件夹下载 ZIP，内部按文件夹结构放置多篇 `.md`、`.html` 或 `.pdf`
+- 当前 PDF 是服务端生成的文本归档版，适合阅读和交付；复杂样式、图片内嵌 PDF 可后续增强
 
 ## 权限、认证与安全设计
 
@@ -610,7 +633,8 @@ DOC_ADDR=:8080 DOC_DATA_DIR=../data ./doc-system
 - LDAP / 钉钉 / 企业微信登录
 - 操作日志页面（已支持）
 - 定时备份
-- 一键导出
+- 一键导出整套知识库 ZIP（已支持）
+- 单篇文档 / 单个文件夹导出为 Markdown、HTML 或 PDF（已支持）
 - Docker Compose 部署
 - systemd 服务文件
 - 首次安装初始化向导（已支持）
@@ -643,7 +667,7 @@ web/src/api.js
 2. 正文全文搜索
 3. 自动保存草稿
 4. 上传文件大小和类型限制配置化
-5. 一键导出 / 定时备份
+5. 定时备份 / 导出增强
 ```
 
 当前最推荐的下一步：
@@ -652,4 +676,4 @@ web/src/api.js
 Docker Compose / systemd 部署，或正文全文搜索
 ```
 
-原因：双编辑器、大纲、导入转换、文档历史版本、操作日志和首次安装向导已补齐，下一步可继续补部署体验或检索能力。
+原因：双编辑器、大纲、导入转换、文档历史版本、操作日志、首次安装向导和整库 ZIP 导出已补齐，下一步可继续补部署体验或检索能力。

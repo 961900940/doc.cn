@@ -159,6 +159,8 @@ func main() {
 	mux.HandleFunc("/api/uploads", a.withAuth(a.handleUploads))
 	mux.HandleFunc("/api/search", a.withAuth(a.handleSearch))
 	mux.HandleFunc("/api/operation-logs", a.withAuth(a.handleOperationLogs))
+	mux.HandleFunc("/api/export", a.withAuth(a.handleExport))
+	mux.HandleFunc("/api/export/", a.withAuth(a.handleExport))
 	mux.Handle("/uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir(a.uploadDir))))
 	mux.HandleFunc("/", serveStatic)
 
@@ -2712,6 +2714,7 @@ func withCORS(next http.Handler) http.Handler {
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 			w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+			w.Header().Set("Access-Control-Expose-Headers", "Content-Disposition")
 		}
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
