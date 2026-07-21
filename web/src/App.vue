@@ -69,7 +69,8 @@ const settings = ref({
   app_name: 'Doc System',
   force_password_change_new_users: false,
   mfa_failed_window_seconds: 120,
-  mfa_failed_max_attempts: 5
+  mfa_failed_max_attempts: 5,
+  jwt_expire_days: 1
 })
 const settingsSaving = ref(false)
 const userDialogVisible = ref(false)
@@ -458,6 +459,21 @@ async function saveMFAFailureSettings() {
       mfa_failed_max_attempts: settings.value.mfa_failed_max_attempts
     })
     ElMessage.success('MFA 失败限制已更新')
+  } catch (error) {
+    ElMessage.error(cleanError(error.message))
+    await loadSettings()
+  } finally {
+    settingsSaving.value = false
+  }
+}
+
+async function saveJWTExpireDays() {
+  settingsSaving.value = true
+  try {
+    await updateSettings({
+      jwt_expire_days: settings.value.jwt_expire_days
+    })
+    ElMessage.success('JWT 有效期已更新，对新登录生效')
   } catch (error) {
     ElMessage.error(cleanError(error.message))
     await loadSettings()
@@ -1922,6 +1938,23 @@ function roleLabel(role) {
                 @change="saveMFAFailureSettings"
               />
               <span>次</span>
+            </div>
+          </div>
+          <div class="config-line">
+            <div>
+              <strong>JWT 登录有效期</strong>
+              <span class="config-help">登录后 Cookie / JWT 的有效天数，范围 1～90 天，默认 1 天。修改后仅对新登录生效。</span>
+            </div>
+            <div class="config-number-group">
+              <el-input-number
+                v-model="settings.jwt_expire_days"
+                size="small"
+                :min="1"
+                :max="90"
+                :controls="false"
+                @change="saveJWTExpireDays"
+              />
+              <span>天</span>
             </div>
           </div>
         </div>

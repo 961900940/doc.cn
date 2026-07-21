@@ -324,6 +324,12 @@ func (a *app) migrate() error {
 	); err != nil {
 		return err
 	}
+	if _, err := a.db.Exec(
+		`INSERT OR IGNORE INTO app_settings (key, value, updated_at)
+		 VALUES ('jwt_expire_days', '1', datetime('now'))`,
+	); err != nil {
+		return err
+	}
 	var jwtSecretCount int
 	if err := a.db.QueryRow(`SELECT COUNT(*) FROM app_settings WHERE key = 'jwt_secret'`).Scan(&jwtSecretCount); err != nil {
 		return err
@@ -568,15 +574,33 @@ func (a *app) startMFAChallenge(w http.ResponseWriter, user User) {
 	writeJSON(w, http.StatusOK, payload)
 }
 
+func (a *app) jwtExpireDays() (int, error) {
+	days, err := a.intSetting("jwt_expire_days", 1)
+	if err != nil {
+		return 0, err
+	}
+	if days < 1 {
+		return 1, nil
+	}
+	if days > 90 {
+		return 90, nil
+	}
+	return days, nil
+}
+
 func (a *app) signJWT(user User) (string, error) {
 	now := time.Now()
+	expireDays, err := a.jwtExpireDays()
+	if err != nil {
+		return "", err
+	}
 	header := map[string]string{"alg": "HS256", "typ": "JWT"}
 	claims := JWTClaims{
 		Subject:      user.ID,
 		Username:     user.Username,
 		TokenVersion: user.TokenVersion,
 		IssuedAt:     now.Unix(),
-		ExpiresAt:    now.Add(7 * 24 * time.Hour).Unix(),
+		ExpiresAt:    now.Add(time.Duration(expireDays) * 24 * time.Hour).Unix(),
 	}
 	headerJSON, err := json.Marshal(header)
 	if err != nil {
@@ -628,13 +652,17 @@ func (a *app) issueJWT(w http.ResponseWriter, user User) error {
 	if err != nil {
 		return err
 	}
+	expireDays, err := a.jwtExpireDays()
+	if err != nil {
+		return err
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     "doc_token",
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		MaxAge:   86400 * 7,
+		MaxAge:   expireDays * 86400,
 	})
 	return nil
 }
@@ -756,11 +784,17 @@ func (a *app) handleSettings(w http.ResponseWriter, r *http.Request, user User) 
 			serverError(w, err)
 			return
 		}
+		jwtExpireDays, err := a.jwtExpireDays()
+		if err != nil {
+			serverError(w, err)
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"app_name":                        appName,
 			"force_password_change_new_users": force,
 			"mfa_failed_window_seconds":       window,
 			"mfa_failed_max_attempts":         maxAttempts,
+			"jwt_expire_days":                 jwtExpireDays,
 		})
 	case http.MethodPut:
 		var req struct {
@@ -768,6 +802,7 @@ func (a *app) handleSettings(w http.ResponseWriter, r *http.Request, user User) 
 			ForcePasswordChangeNewUsers *bool   `json:"force_password_change_new_users"`
 			MFAFailedWindowSeconds      *int    `json:"mfa_failed_window_seconds"`
 			MFAFailedMaxAttempts        *int    `json:"mfa_failed_max_attempts"`
+			JWTExpireDays               *int    `json:"jwt_expire_days"`
 		}
 		if err := readJSON(r, &req); err != nil {
 			badRequest(w, err.Error())
@@ -810,6 +845,16 @@ func (a *app) handleSettings(w http.ResponseWriter, r *http.Request, user User) 
 				return
 			}
 			if err := a.setIntSetting("mfa_failed_max_attempts", *req.MFAFailedMaxAttempts); err != nil {
+				serverError(w, err)
+				return
+			}
+		}
+		if req.JWTExpireDays != nil {
+			if *req.JWTExpireDays < 1 || *req.JWTExpireDays > 90 {
+				badRequest(w, "JWT 有效期需在 1 到 90 天之间")
+				return
+			}
+			if err := a.setIntSetting("jwt_expire_days", *req.JWTExpireDays); err != nil {
 				serverError(w, err)
 				return
 			}
@@ -995,12 +1040,22 @@ func (a *app) handleUserByID(w http.ResponseWriter, r *http.Request, user User) 
 			return
 		}
 		if req.MFAEnabled != nil {
-			if _, err := a.db.Exec(
-				`UPDATE users SET mfa_enabled = ?, updated_at = datetime('now') WHERE id = ?`,
-				boolInt(*req.MFAEnabled), id,
-			); err != nil {
-				serverError(w, err)
-				return
+			if *req.MFAEnabled {
+				if _, err := a.db.Exec(
+					`UPDATE users SET mfa_enabled = 1, updated_at = datetime('now') WHERE id = ?`,
+					id,
+				); err != nil {
+					serverError(w, err)
+					return
+				}
+			} else {
+				if _, err := a.db.Exec(
+					`UPDATE users SET mfa_enabled = 0, mfa_secret = NULL, mfa_bound_at = NULL, updated_at = datetime('now') WHERE id = ?`,
+					id,
+				); err != nil {
+					serverError(w, err)
+					return
+				}
 			}
 		}
 		a.refreshUserSessions(id)

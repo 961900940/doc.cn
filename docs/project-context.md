@@ -270,7 +270,7 @@ PUT  /api/settings
 
 `/api/settings` 仅允许初始化超级管理员 `admin` 访问；普通管理员角色不能查看或修改项目配置。
 
-登录成功后后端写入 `doc_token` HttpOnly Cookie，内容是 HS256 签名 JWT。JWT 只包含用户 id、用户名、token_version、签发时间和过期时间；每次鉴权会按用户 id 读取数据库中的当前角色和状态，并校验 token_version。用户修改密码或管理员重置密码会递增 token_version，使旧 JWT 立即失效。
+登录成功后后端写入 `doc_token` HttpOnly Cookie，内容是 HS256 签名 JWT。JWT 只包含用户 id、用户名、token_version、签发时间和过期时间；有效期由项目配置 `jwt_expire_days` 决定，默认 1 天（1～90）。每次鉴权会按用户 id 读取数据库中的当前角色和状态，并校验 token_version。用户修改密码或管理员重置密码会递增 token_version，使旧 JWT 立即失效。
 
 用户管理：
 
