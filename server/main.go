@@ -92,6 +92,16 @@ type Document struct {
 	UpdatedAt string `json:"updated_at"`
 }
 
+type TrashItem struct {
+	ID            int64  `json:"id"`
+	Type          string `json:"type"`
+	Title         string `json:"title"`
+	ParentID      int64  `json:"parent_id"`
+	DeletedAt     string `json:"deleted_at"`
+	FolderCount   int    `json:"folder_count"`
+	DocumentCount int    `json:"document_count"`
+}
+
 type TreeNode struct {
 	Key       string     `json:"key"`
 	ID        int64      `json:"id"`
@@ -134,6 +144,8 @@ func main() {
 	mux.HandleFunc("/api/folders/", a.withAuth(a.handleFolderByID))
 	mux.HandleFunc("/api/documents", a.withAuth(a.handleDocuments))
 	mux.HandleFunc("/api/documents/", a.withAuth(a.handleDocumentByID))
+	mux.HandleFunc("/api/trash", a.withAuth(a.handleTrash))
+	mux.HandleFunc("/api/trash/", a.withAuth(a.handleTrashByID))
 	mux.HandleFunc("/api/uploads", a.withAuth(a.handleUploads))
 	mux.HandleFunc("/api/search", a.withAuth(a.handleSearch))
 	mux.Handle("/uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir(a.uploadDir))))
@@ -1213,11 +1225,16 @@ func (a *app) handleFolderByID(w http.ResponseWriter, r *http.Request, user User
 			http.Error(w, "只读用户不能删除文件夹", http.StatusForbidden)
 			return
 		}
-		if _, err := a.db.Exec(`UPDATE folders SET deleted_at = datetime('now') WHERE id = ?`, id); err != nil {
+		folder, err := a.getFolder(id, false)
+		if err != nil {
+			notFound(w)
+			return
+		}
+		if err := a.softDeleteFolderTree(id); err != nil {
 			serverError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		writeJSON(w, http.StatusOK, map[string]string{"message": fmt.Sprintf("文件夹“%s”已移入回收站", folder.Name)})
 	default:
 		methodNotAllowed(w)
 	}
@@ -1341,14 +1358,97 @@ func (a *app) handleDocumentByID(w http.ResponseWriter, r *http.Request, user Us
 			http.Error(w, "只读用户不能删除文档", http.StatusForbidden)
 			return
 		}
-		if _, err := a.db.Exec(`UPDATE documents SET deleted_at = datetime('now') WHERE id = ?`, id); err != nil {
+		doc, err := a.getDocument(id)
+		if err != nil {
+			notFound(w)
+			return
+		}
+		if _, err := a.db.Exec(`UPDATE documents SET deleted_at = datetime('now'), updated_at = datetime('now') WHERE id = ? AND deleted_at IS NULL`, id); err != nil {
 			serverError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		writeJSON(w, http.StatusOK, map[string]string{"message": fmt.Sprintf("文档“%s”已移入回收站", doc.Title)})
 	default:
 		methodNotAllowed(w)
 	}
+}
+
+func (a *app) handleTrash(w http.ResponseWriter, r *http.Request, user User) {
+	if !canWrite(user) {
+		http.Error(w, "只读用户不能访问回收站", http.StatusForbidden)
+		return
+	}
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	page, pageSize, err := parsePagination(r)
+	if err != nil {
+		badRequest(w, err.Error())
+		return
+	}
+	items, err := a.listTrashItems()
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	total := len(items)
+	start := (page - 1) * pageSize
+	if start > total {
+		start = total
+	}
+	end := start + pageSize
+	if end > total {
+		end = total
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items":     items[start:end],
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+	})
+}
+
+func (a *app) handleTrashByID(w http.ResponseWriter, r *http.Request, user User) {
+	if !canWrite(user) {
+		http.Error(w, "只读用户不能操作回收站", http.StatusForbidden)
+		return
+	}
+	trimmed := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/trash/"), "/")
+	parts := strings.Split(trimmed, "/")
+	if len(parts) < 2 || len(parts) > 3 {
+		notFound(w)
+		return
+	}
+	itemType := parts[0]
+	id, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil || id <= 0 {
+		notFound(w)
+		return
+	}
+	if len(parts) == 3 {
+		if parts[2] != "restore" || r.Method != http.MethodPost {
+			methodNotAllowed(w)
+			return
+		}
+		message, err := a.restoreTrashItem(itemType, id)
+		if err != nil {
+			badRequest(w, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"message": message})
+		return
+	}
+	if r.Method != http.MethodDelete {
+		methodNotAllowed(w)
+		return
+	}
+	message, err := a.purgeTrashItem(itemType, id)
+	if err != nil {
+		badRequest(w, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"message": message})
 }
 
 func (a *app) handleUploads(w http.ResponseWriter, r *http.Request, user User) {
@@ -1601,6 +1701,16 @@ func (a *app) listFolders() ([]Folder, error) {
 	return folders, rows.Err()
 }
 
+func (a *app) getFolder(id int64, includeDeleted bool) (Folder, error) {
+	var folder Folder
+	query := `SELECT id, parent_id, name, sort_order FROM folders WHERE id = ?`
+	if !includeDeleted {
+		query += ` AND deleted_at IS NULL`
+	}
+	err := a.db.QueryRow(query, id).Scan(&folder.ID, &folder.ParentID, &folder.Name, &folder.SortOrder)
+	return folder, err
+}
+
 func (a *app) listDocuments() ([]Document, error) {
 	rows, err := a.db.Query(
 		`SELECT id, folder_id, title, file_path, sort_order, updated_at FROM documents
@@ -1622,6 +1732,348 @@ func (a *app) getDocument(id int64) (Document, error) {
 		id,
 	).Scan(&doc.ID, &doc.FolderID, &doc.Title, &doc.FilePath, &doc.SortOrder, &doc.UpdatedAt)
 	return doc, err
+}
+
+func (a *app) getDeletedDocument(id int64) (Document, error) {
+	var doc Document
+	err := a.db.QueryRow(
+		`SELECT id, folder_id, title, file_path, sort_order, updated_at
+		 FROM documents WHERE id = ? AND deleted_at IS NOT NULL`,
+		id,
+	).Scan(&doc.ID, &doc.FolderID, &doc.Title, &doc.FilePath, &doc.SortOrder, &doc.UpdatedAt)
+	return doc, err
+}
+
+func (a *app) softDeleteFolderTree(id int64) error {
+	tx, err := a.db.Begin()
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(
+		`WITH RECURSIVE subtree(id) AS (
+			SELECT id FROM folders WHERE id = ?
+			UNION ALL
+			SELECT f.id FROM folders f JOIN subtree s ON f.parent_id = s.id
+		)
+		UPDATE documents
+		SET deleted_at = COALESCE(deleted_at, datetime('now')), updated_at = datetime('now')
+		WHERE folder_id IN (SELECT id FROM subtree)`,
+		id,
+	); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if _, err := tx.Exec(
+		`WITH RECURSIVE subtree(id) AS (
+			SELECT id FROM folders WHERE id = ?
+			UNION ALL
+			SELECT f.id FROM folders f JOIN subtree s ON f.parent_id = s.id
+		)
+		UPDATE folders
+		SET deleted_at = COALESCE(deleted_at, datetime('now')), updated_at = datetime('now')
+		WHERE id IN (SELECT id FROM subtree)`,
+		id,
+	); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
+
+func (a *app) listTrashItems() ([]TrashItem, error) {
+	items := make([]TrashItem, 0)
+	folderItems := make([]TrashItem, 0)
+	folderRows, err := a.db.Query(
+		`SELECT id, parent_id, name, deleted_at
+		 FROM folders
+		 WHERE deleted_at IS NOT NULL
+		   AND (parent_id = 0 OR NOT EXISTS (
+		   	SELECT 1 FROM folders parent WHERE parent.id = folders.parent_id AND parent.deleted_at IS NOT NULL
+		   ))
+		 ORDER BY deleted_at DESC, id DESC`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	for folderRows.Next() {
+		var item TrashItem
+		item.Type = "folder"
+		if err := folderRows.Scan(&item.ID, &item.ParentID, &item.Title, &item.DeletedAt); err != nil {
+			_ = folderRows.Close()
+			return nil, err
+		}
+		folderItems = append(folderItems, item)
+	}
+	if err := folderRows.Err(); err != nil {
+		_ = folderRows.Close()
+		return nil, err
+	}
+	if err := folderRows.Close(); err != nil {
+		return nil, err
+	}
+	for _, item := range folderItems {
+		folderCount, documentCount, err := a.countFolderTree(item.ID)
+		if err != nil {
+			return nil, err
+		}
+		item.FolderCount = folderCount
+		item.DocumentCount = documentCount
+		items = append(items, item)
+	}
+	documentRows, err := a.db.Query(
+		`SELECT id, folder_id, title, deleted_at
+		 FROM documents
+		 WHERE deleted_at IS NOT NULL
+		   AND (folder_id = 0 OR NOT EXISTS (
+		   	SELECT 1 FROM folders parent WHERE parent.id = documents.folder_id AND parent.deleted_at IS NOT NULL
+		   ))
+		 ORDER BY deleted_at DESC, id DESC`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer documentRows.Close()
+	for documentRows.Next() {
+		var item TrashItem
+		item.Type = "document"
+		item.DocumentCount = 1
+		if err := documentRows.Scan(&item.ID, &item.ParentID, &item.Title, &item.DeletedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	if err := documentRows.Err(); err != nil {
+		return nil, err
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].DeletedAt != items[j].DeletedAt {
+			return items[i].DeletedAt > items[j].DeletedAt
+		}
+		return items[i].ID > items[j].ID
+	})
+	return items, nil
+}
+
+func (a *app) countFolderTree(id int64) (int, int, error) {
+	var folderCount int
+	if err := a.db.QueryRow(
+		`WITH RECURSIVE subtree(id, path) AS (
+			SELECT id, printf(',%d,', id) FROM folders WHERE id = ?
+			UNION ALL
+			SELECT f.id, s.path || f.id || ','
+			FROM folders f
+			JOIN subtree s ON f.parent_id = s.id
+			WHERE instr(s.path, printf(',%d,', f.id)) = 0
+		)
+		SELECT COUNT(*) FROM subtree`,
+		id,
+	).Scan(&folderCount); err != nil {
+		return 0, 0, err
+	}
+	var documentCount int
+	if err := a.db.QueryRow(
+		`WITH RECURSIVE subtree(id, path) AS (
+			SELECT id, printf(',%d,', id) FROM folders WHERE id = ?
+			UNION ALL
+			SELECT f.id, s.path || f.id || ','
+			FROM folders f
+			JOIN subtree s ON f.parent_id = s.id
+			WHERE instr(s.path, printf(',%d,', f.id)) = 0
+		)
+		SELECT COUNT(*) FROM documents WHERE folder_id IN (SELECT id FROM subtree)`,
+		id,
+	).Scan(&documentCount); err != nil {
+		return 0, 0, err
+	}
+	return folderCount, documentCount, nil
+}
+
+func (a *app) restoreTrashItem(itemType string, id int64) (string, error) {
+	switch itemType {
+	case "folder":
+		folder, err := a.getFolder(id, true)
+		if err != nil {
+			return "", errors.New("回收站中未找到该文件夹")
+		}
+		var folderDeletedAt sql.NullString
+		if err := a.db.QueryRow(`SELECT deleted_at FROM folders WHERE id = ?`, id).Scan(&folderDeletedAt); err != nil || !folderDeletedAt.Valid {
+			return "", errors.New("回收站中未找到该文件夹")
+		}
+		if folder.ParentID != 0 {
+			var deletedAt sql.NullString
+			err := a.db.QueryRow(`SELECT deleted_at FROM folders WHERE id = ?`, folder.ParentID).Scan(&deletedAt)
+			if err != nil {
+				return "", errors.New("上级文件夹不存在，无法恢复")
+			}
+			if deletedAt.Valid {
+				return "", errors.New("上级文件夹仍在回收站，请先恢复上级文件夹")
+			}
+		}
+		if err := a.restoreFolderTree(id); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("文件夹“%s”已恢复", folder.Name), nil
+	case "document":
+		doc, err := a.getDeletedDocument(id)
+		if err != nil {
+			return "", errors.New("回收站中未找到该文档")
+		}
+		if doc.FolderID != 0 {
+			var deletedAt sql.NullString
+			err := a.db.QueryRow(`SELECT deleted_at FROM folders WHERE id = ?`, doc.FolderID).Scan(&deletedAt)
+			if err != nil {
+				return "", errors.New("所在文件夹不存在，无法恢复")
+			}
+			if deletedAt.Valid {
+				return "", errors.New("所在文件夹仍在回收站，请先恢复文件夹")
+			}
+		}
+		if _, err := a.db.Exec(
+			`UPDATE documents SET deleted_at = NULL, updated_at = datetime('now') WHERE id = ? AND deleted_at IS NOT NULL`,
+			id,
+		); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("文档“%s”已恢复", doc.Title), nil
+	default:
+		return "", errors.New("回收站项目类型无效")
+	}
+}
+
+func (a *app) restoreFolderTree(id int64) error {
+	tx, err := a.db.Begin()
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(
+		`WITH RECURSIVE subtree(id) AS (
+			SELECT id FROM folders WHERE id = ?
+			UNION ALL
+			SELECT f.id FROM folders f JOIN subtree s ON f.parent_id = s.id
+		)
+		UPDATE folders
+		SET deleted_at = NULL, updated_at = datetime('now')
+		WHERE id IN (SELECT id FROM subtree)`,
+		id,
+	); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if _, err := tx.Exec(
+		`WITH RECURSIVE subtree(id) AS (
+			SELECT id FROM folders WHERE id = ?
+			UNION ALL
+			SELECT f.id FROM folders f JOIN subtree s ON f.parent_id = s.id
+		)
+		UPDATE documents
+		SET deleted_at = NULL, updated_at = datetime('now')
+		WHERE folder_id IN (SELECT id FROM subtree)`,
+		id,
+	); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
+
+func (a *app) purgeTrashItem(itemType string, id int64) (string, error) {
+	switch itemType {
+	case "folder":
+		folder, err := a.getFolder(id, true)
+		if err != nil {
+			return "", errors.New("回收站中未找到该文件夹")
+		}
+		var folderDeletedAt sql.NullString
+		if err := a.db.QueryRow(`SELECT deleted_at FROM folders WHERE id = ?`, id).Scan(&folderDeletedAt); err != nil || !folderDeletedAt.Valid {
+			return "", errors.New("回收站中未找到该文件夹")
+		}
+		if err := a.purgeFolderTree(id); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("文件夹“%s”已永久删除", folder.Name), nil
+	case "document":
+		doc, err := a.getDeletedDocument(id)
+		if err != nil {
+			return "", errors.New("回收站中未找到该文档")
+		}
+		if _, err := a.db.Exec(`DELETE FROM documents WHERE id = ? AND deleted_at IS NOT NULL`, id); err != nil {
+			return "", err
+		}
+		if doc.FilePath != "" {
+			if err := os.Remove(filepath.Join(a.docsDir, doc.FilePath)); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return "", err
+			}
+		}
+		return fmt.Sprintf("文档“%s”已永久删除", doc.Title), nil
+	default:
+		return "", errors.New("回收站项目类型无效")
+	}
+}
+
+func (a *app) purgeFolderTree(id int64) error {
+	rows, err := a.db.Query(
+		`WITH RECURSIVE subtree(id) AS (
+			SELECT id FROM folders WHERE id = ?
+			UNION ALL
+			SELECT f.id FROM folders f JOIN subtree s ON f.parent_id = s.id
+		)
+		SELECT file_path FROM documents WHERE folder_id IN (SELECT id FROM subtree)`,
+		id,
+	)
+	if err != nil {
+		return err
+	}
+	filePaths := make([]string, 0)
+	for rows.Next() {
+		var filePath string
+		if err := rows.Scan(&filePath); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if filePath != "" {
+			filePaths = append(filePaths, filePath)
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	tx, err := a.db.Begin()
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(
+		`WITH RECURSIVE subtree(id) AS (
+			SELECT id FROM folders WHERE id = ?
+			UNION ALL
+			SELECT f.id FROM folders f JOIN subtree s ON f.parent_id = s.id
+		)
+		DELETE FROM documents WHERE folder_id IN (SELECT id FROM subtree)`,
+		id,
+	); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if _, err := tx.Exec(
+		`WITH RECURSIVE subtree(id) AS (
+			SELECT id FROM folders WHERE id = ?
+			UNION ALL
+			SELECT f.id FROM folders f JOIN subtree s ON f.parent_id = s.id
+		)
+		DELETE FROM folders WHERE id IN (SELECT id FROM subtree)`,
+		id,
+	); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	for _, filePath := range filePaths {
+		if err := os.Remove(filepath.Join(a.docsDir, filePath)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
 }
 
 func scanDocuments(rows *sql.Rows) ([]Document, error) {

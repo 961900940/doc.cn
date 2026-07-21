@@ -14,11 +14,14 @@ import {
   getDocument,
   getSettings,
   getTree,
+  listTrash,
   listUsers,
   login,
   logout,
   me,
+  purgeTrashItem,
   renameFolder,
+  restoreTrashItem,
   resetUserMFA,
   resetUserPassword,
   saveDocument,
@@ -59,6 +62,12 @@ const settings = ref({
 const settingsSaving = ref(false)
 const userDialogVisible = ref(false)
 const projectConfigDialogVisible = ref(false)
+const trashDialogVisible = ref(false)
+const trashItems = ref([])
+const trashLoading = ref(false)
+const trashTotal = ref(0)
+const trashPage = ref(1)
+const trashPageSize = ref(10)
 const userFormVisible = ref(false)
 const userSaving = ref(false)
 const editingUser = ref(null)
@@ -650,14 +659,162 @@ async function removeNode(node) {
     return
   }
   if (node.type === 'root') return
-  if (!window.confirm(`确定删除“${node.title}”？`)) return
-  if (node.type === 'folder') {
-    await deleteFolder(node.id)
-  } else {
-    await deleteDocument(node.id)
-    if (document.value?.id === node.id) document.value = null
+  const impact = describeDeleteImpact(node)
+  try {
+    await ElMessageBox.confirm(
+      impact.message,
+      impact.title,
+      {
+        confirmButtonText: '移入回收站',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+  } catch {
+    return
   }
-  await refreshTree()
+  try {
+    const result = node.type === 'folder'
+      ? await deleteFolder(node.id)
+      : await deleteDocument(node.id)
+    if (node.type === 'document' && document.value?.id === node.id) {
+      document.value = null
+    }
+    ElMessage.success(result?.message || '已移入回收站')
+    await refreshTree()
+  } catch (error) {
+    ElMessage.error(cleanError(error.message) || '删除失败')
+  }
+}
+
+function describeDeleteImpact(node) {
+  if (node.type === 'document') {
+    return {
+      title: '删除文档',
+      message: `确定将文档“${node.title}”移入回收站吗？可以在回收站中恢复。`
+    }
+  }
+  const stats = countNodeChildren(node)
+  const parts = []
+  if (stats.folders) parts.push(`${stats.folders} 个子文件夹`)
+  if (stats.documents) parts.push(`${stats.documents} 篇文档`)
+  const detail = parts.length ? `该文件夹下的 ${parts.join('、')} 也会一起移入回收站。` : '该文件夹当前没有子内容。'
+  return {
+    title: '删除文件夹',
+    message: `确定将文件夹“${node.title}”移入回收站吗？${detail} 可以在回收站中恢复。`
+  }
+}
+
+function countNodeChildren(node) {
+  const stats = { folders: 0, documents: 0 }
+  for (const child of node.children || []) {
+    if (child.type === 'folder') {
+      stats.folders += 1
+      const nested = countNodeChildren(child)
+      stats.folders += nested.folders
+      stats.documents += nested.documents
+    } else if (child.type === 'document') {
+      stats.documents += 1
+    }
+  }
+  return stats
+}
+
+async function openTrashDialog() {
+  trashDialogVisible.value = true
+  trashPage.value = 1
+  await loadTrashItems()
+}
+
+async function loadTrashItems() {
+  trashLoading.value = true
+  try {
+    const result = await listTrash({ page: trashPage.value, pageSize: trashPageSize.value })
+    trashItems.value = result.items || []
+    trashTotal.value = result.total || 0
+  } catch (error) {
+    ElMessage.error(cleanError(error.message) || '加载回收站失败')
+  } finally {
+    trashLoading.value = false
+  }
+}
+
+async function restoreTrash(row) {
+  try {
+    const result = await restoreTrashItem(row.type, row.id)
+    ElMessage.success(result?.message || '已恢复')
+    await reloadTrashAfterMutation()
+    await refreshTree()
+  } catch (error) {
+    ElMessage.error(cleanError(error.message) || '恢复失败')
+  }
+}
+
+async function purgeTrash(row) {
+  const label = row.type === 'folder' ? '文件夹' : '文档'
+  try {
+    await ElMessageBox.confirm(
+      `确定永久删除${label}“${row.title}”吗？该操作不可恢复。`,
+      `永久删除${label}`,
+      {
+        confirmButtonText: '永久删除',
+        cancelButtonText: '取消',
+        type: 'error'
+      }
+    )
+  } catch {
+    return
+  }
+  try {
+    const result = await purgeTrashItem(row.type, row.id)
+    ElMessage.success(result?.message || '已永久删除')
+    await reloadTrashAfterMutation()
+    await refreshTree()
+  } catch (error) {
+    ElMessage.error(cleanError(error.message) || '永久删除失败')
+  }
+}
+
+function trashImpact(row) {
+  if (row.type === 'document') return '1 篇文档'
+  const parts = []
+  if (row.folder_count) parts.push(`${row.folder_count} 个文件夹`)
+  if (row.document_count) parts.push(`${row.document_count} 篇文档`)
+  return parts.join('、') || '空文件夹'
+}
+
+function formatBeijingTime(value) {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).format(date).replace(/\//g, '-')
+}
+
+async function reloadTrashAfterMutation() {
+  if (trashItems.value.length === 1 && trashPage.value > 1) {
+    trashPage.value -= 1
+  }
+  await loadTrashItems()
+}
+
+async function handleTrashPageChange(page) {
+  trashPage.value = page
+  await loadTrashItems()
+}
+
+async function handleTrashPageSizeChange(size) {
+  trashPageSize.value = size
+  trashPage.value = 1
+  await loadTrashItems()
 }
 
 async function handleNodeClick(node) {
@@ -879,6 +1036,7 @@ function roleLabel(role) {
       <div class="top-actions">
         <el-button v-if="canEdit" :icon="'FolderAdd'" @click="createRootFolder">文件夹</el-button>
         <el-button v-if="canEdit" type="primary" :icon="'DocumentAdd'" @click="createDoc()">文档</el-button>
+        <el-button v-if="canEdit" :icon="'Delete'" @click="openTrashDialog">回收站</el-button>
         <el-dropdown trigger="click">
           <button class="user-menu" type="button">
             <span class="user-avatar">{{ (user.nickname || user.username).slice(0, 1).toUpperCase() }}</span>
@@ -949,18 +1107,26 @@ function roleLabel(role) {
                 <span>{{ data.title }}</span>
               </span>
               <span class="tree-actions">
-                <button v-if="canCreateIn(data)" title="新建文档" @click.stop="createDoc(data)">
-                  <el-icon><DocumentAdd /></el-icon>
-                </button>
-                <button v-if="canCreateIn(data)" title="新建文件夹" @click.stop="createChildFolder(data)">
-                  <el-icon><FolderAdd /></el-icon>
-                </button>
-                <button v-if="canEdit && data.type !== 'root'" title="重命名" @click.stop="renameNode(data)">
-                  <el-icon><Edit /></el-icon>
-                </button>
-                <button v-if="canEdit && data.type !== 'root'" title="删除" @click.stop="removeNode(data)">
-                  <el-icon><Delete /></el-icon>
-                </button>
+                <el-tooltip v-if="canCreateIn(data)" content="新建文档" placement="top" :show-after="80" :hide-after="0">
+                  <button aria-label="新建文档" @click.stop="createDoc(data)">
+                    <el-icon><DocumentAdd /></el-icon>
+                  </button>
+                </el-tooltip>
+                <el-tooltip v-if="canCreateIn(data)" content="新建文件夹" placement="top" :show-after="80" :hide-after="0">
+                  <button aria-label="新建文件夹" @click.stop="createChildFolder(data)">
+                    <el-icon><FolderAdd /></el-icon>
+                  </button>
+                </el-tooltip>
+                <el-tooltip v-if="canEdit && data.type !== 'root'" content="重命名" placement="top" :show-after="80" :hide-after="0">
+                  <button aria-label="重命名" @click.stop="renameNode(data)">
+                    <el-icon><Edit /></el-icon>
+                  </button>
+                </el-tooltip>
+                <el-tooltip v-if="canEdit && data.type !== 'root'" content="删除" placement="top" :show-after="80" :hide-after="0">
+                  <button aria-label="删除" @click.stop="removeNode(data)">
+                    <el-icon><Delete /></el-icon>
+                  </button>
+                </el-tooltip>
               </span>
             </div>
           </template>
@@ -1070,6 +1236,56 @@ function roleLabel(role) {
           <span>选择或新建一篇文档</span>
         </div>
       </section>
+
+      <el-dialog v-model="trashDialogVisible" title="回收站" width="760px">
+        <div class="trash-toolbar">
+          <span>删除的文档和文件夹会先进入回收站，永久删除后不可恢复。</span>
+          <el-button :icon="'Refresh'" @click="loadTrashItems">刷新</el-button>
+        </div>
+        <el-table v-if="trashItems.length" v-loading="trashLoading" :data="trashItems" class="trash-table">
+          <el-table-column label="名称" min-width="220">
+            <template #default="{ row }">
+              <div class="trash-item-name">
+                <el-icon v-if="row.type === 'folder'"><Folder /></el-icon>
+                <el-icon v-else><Document /></el-icon>
+                <div>
+                  <strong>{{ row.title }}</strong>
+                  <span>{{ row.type === 'folder' ? '文件夹' : '文档' }}</span>
+                </div>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="影响范围" min-width="120">
+            <template #default="{ row }">{{ trashImpact(row) }}</template>
+          </el-table-column>
+          <el-table-column label="删除时间" min-width="165">
+            <template #default="{ row }">{{ formatBeijingTime(row.deleted_at) }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="145" fixed="right">
+            <template #default="{ row }">
+              <div class="table-actions">
+                <el-button link type="primary" @click="restoreTrash(row)">恢复</el-button>
+                <el-button link type="danger" @click="purgeTrash(row)">永久删除</el-button>
+              </div>
+            </template>
+          </el-table-column>
+        </el-table>
+        <div v-else v-loading="trashLoading" class="trash-empty">
+          <el-empty description="回收站为空" />
+        </div>
+        <div v-if="trashTotal > trashPageSize" class="trash-pagination">
+          <el-pagination
+            v-model:current-page="trashPage"
+            v-model:page-size="trashPageSize"
+            :total="trashTotal"
+            :page-sizes="[10, 20, 50]"
+            layout="total, sizes, prev, pager, next"
+            background
+            @current-change="handleTrashPageChange"
+            @size-change="handleTrashPageSizeChange"
+          />
+        </div>
+      </el-dialog>
 
       <el-dialog v-model="userDialogVisible" title="用户管理" width="920px">
         <div class="user-manager-toolbar">

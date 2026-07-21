@@ -445,6 +445,63 @@ textarea {
   background: #eaf1ff;
 }
 
+.trash-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.trash-table {
+  width: 100%;
+}
+
+.trash-table .el-table__inner-wrapper,
+.trash-table .el-scrollbar__wrap {
+  overflow-x: hidden;
+}
+
+.trash-empty {
+  min-height: 240px;
+  display: grid;
+  place-items: center;
+}
+
+.trash-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.trash-item-name {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.trash-item-name > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.trash-item-name strong,
+.trash-item-name span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trash-item-name span {
+  color: #64748b;
+  font-size: 12px;
+}
+
 .sidebar .el-tree-node__content {
   height: 32px;
   border-radius: 6px;

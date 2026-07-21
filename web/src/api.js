@@ -160,6 +160,22 @@ export function deleteDocument(id) {
   return api(`/api/documents/${id}`, { method: 'DELETE' })
 }
 
+export function listTrash({ page = 1, pageSize = 10 } = {}) {
+  const query = new URLSearchParams({
+    page: String(page),
+    page_size: String(pageSize)
+  })
+  return api(`/api/trash?${query.toString()}`)
+}
+
+export function restoreTrashItem(type, id) {
+  return api(`/api/trash/${type}/${id}/restore`, { method: 'POST' })
+}
+
+export function purgeTrashItem(type, id) {
+  return api(`/api/trash/${type}/${id}`, { method: 'DELETE' })
+}
+
 export function searchDocuments(q) {
   return api(`/api/search?q=${encodeURIComponent(q)}`)
 }
