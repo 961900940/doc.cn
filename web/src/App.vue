@@ -11,9 +11,11 @@ import {
   deleteUser,
   getAppConfig,
   getDocument,
+  getDocumentVersion,
   getSettings,
   getTree,
   importDocument,
+  listDocumentVersions,
   listTrash,
   listUsers,
   login,
@@ -21,6 +23,7 @@ import {
   me,
   purgeTrashItem,
   renameFolder,
+  restoreDocumentVersion,
   restoreTrashItem,
   resetUserMFA,
   resetUserPassword,
@@ -76,6 +79,13 @@ const trashLoading = ref(false)
 const trashTotal = ref(0)
 const trashPage = ref(1)
 const trashPageSize = ref(10)
+const historyDialogVisible = ref(false)
+const historyItems = ref([])
+const historyLoading = ref(false)
+const historyPreviewLoading = ref(false)
+const historyRestoring = ref(false)
+const selectedHistoryId = ref(null)
+const historyPreview = ref(null)
 const userFormVisible = ref(false)
 const userSaving = ref(false)
 const editingUser = ref(null)
@@ -935,6 +945,77 @@ async function saveCurrent() {
   }
 }
 
+async function openHistoryDialog() {
+  if (!document.value) return
+  historyDialogVisible.value = true
+  selectedHistoryId.value = null
+  historyPreview.value = null
+  await loadHistoryItems()
+}
+
+async function loadHistoryItems() {
+  if (!document.value) return
+  historyLoading.value = true
+  try {
+    const result = await listDocumentVersions(document.value.id)
+    historyItems.value = result?.items || []
+    if (
+      selectedHistoryId.value &&
+      !historyItems.value.some((item) => item.id === selectedHistoryId.value)
+    ) {
+      selectedHistoryId.value = null
+      historyPreview.value = null
+    }
+  } catch (error) {
+    ElMessage.error(cleanError(error.message) || '加载历史版本失败')
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+async function selectHistoryVersion(row) {
+  if (!document.value || !row) return
+  selectedHistoryId.value = row.id
+  historyPreviewLoading.value = true
+  try {
+    historyPreview.value = await getDocumentVersion(document.value.id, row.id)
+  } catch (error) {
+    historyPreview.value = null
+    ElMessage.error(cleanError(error.message) || '加载历史内容失败')
+  } finally {
+    historyPreviewLoading.value = false
+  }
+}
+
+async function restoreHistoryVersion() {
+  if (!document.value || !selectedHistoryId.value || !canEdit.value) return
+  try {
+    await ElMessageBox.confirm(
+      '恢复后当前正文会先保存为新的历史版本，再用所选版本覆盖。确定继续吗？',
+      '恢复历史版本',
+      {
+        type: 'warning',
+        confirmButtonText: '恢复',
+        cancelButtonText: '取消'
+      }
+    )
+  } catch {
+    return
+  }
+  historyRestoring.value = true
+  try {
+    await restoreDocumentVersion(document.value.id, selectedHistoryId.value)
+    document.value = await getDocument(document.value.id)
+    await refreshTree()
+    await loadHistoryItems()
+    ElMessage.success('已恢复到所选历史版本')
+  } catch (error) {
+    ElMessage.error(cleanError(error.message) || '恢复失败')
+  } finally {
+    historyRestoring.value = false
+  }
+}
+
 async function runSearch() {
   const q = searchQuery.value.trim()
   if (!q) {
@@ -1237,6 +1318,7 @@ function roleLabel(role) {
               >
                 大纲
               </el-button>
+              <el-button :icon="'Clock'" @click="openHistoryDialog">历史</el-button>
               <el-button v-if="canEdit" :icon="'Upload'" @click="fileInput.click()">上传</el-button>
               <el-button v-if="canEdit" type="primary" :loading="saving" :icon="'Check'" @click="saveCurrent">保存</el-button>
             </div>
@@ -1339,6 +1421,56 @@ function roleLabel(role) {
           <span>选择或新建一篇文档</span>
         </div>
       </section>
+
+      <el-dialog v-model="historyDialogVisible" title="文档历史版本" width="920px" class="history-dialog">
+        <div class="history-toolbar">
+          <span>每次保存若标题或正文有变化，会先保留当前内容为历史版本（每篇最多 50 个）。</span>
+          <el-button :icon="'Refresh'" @click="loadHistoryItems">刷新</el-button>
+        </div>
+        <div v-loading="historyLoading" class="history-layout">
+          <div class="history-list">
+            <el-table
+              v-if="historyItems.length"
+              :data="historyItems"
+              highlight-current-row
+              :row-class-name="({ row }) => (row.id === selectedHistoryId ? 'is-current' : '')"
+              @row-click="selectHistoryVersion"
+            >
+              <el-table-column label="版本" width="78">
+                <template #default="{ row }">v{{ row.version_no }}</template>
+              </el-table-column>
+              <el-table-column label="标题" min-width="140" prop="title" show-overflow-tooltip />
+              <el-table-column label="保存人" width="100" prop="created_by_name" show-overflow-tooltip />
+              <el-table-column label="时间" min-width="150">
+                <template #default="{ row }">{{ formatBeijingTime(row.created_at) }}</template>
+              </el-table-column>
+            </el-table>
+            <el-empty v-else description="暂无历史版本，保存修改后会出现在这里" />
+          </div>
+          <div v-loading="historyPreviewLoading" class="history-preview">
+            <template v-if="historyPreview">
+              <div class="history-preview-meta">
+                <strong>v{{ historyPreview.version_no }} · {{ historyPreview.title }}</strong>
+                <span>{{ formatBeijingTime(historyPreview.created_at) }} · {{ historyPreview.created_by_name }}</span>
+              </div>
+              <pre class="history-preview-content">{{ historyPreview.content }}</pre>
+            </template>
+            <el-empty v-else description="选择左侧版本查看内容" />
+          </div>
+        </div>
+        <template #footer>
+          <el-button @click="historyDialogVisible = false">关闭</el-button>
+          <el-button
+            v-if="canEdit"
+            type="primary"
+            :disabled="!selectedHistoryId"
+            :loading="historyRestoring"
+            @click="restoreHistoryVersion"
+          >
+            恢复此版本
+          </el-button>
+        </template>
+      </el-dialog>
 
       <el-dialog v-model="trashDialogVisible" title="回收站" width="760px">
         <div class="trash-toolbar">

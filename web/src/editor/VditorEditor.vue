@@ -242,17 +242,6 @@ defineExpose({
   min-height: 0;
 }
 
-.vditor-shell :deep(.vditor) {
-  width: 100% !important;
-  height: 100% !important;
-  border: 0;
-  border-radius: 0;
-}
-
-.vditor-shell :deep(.vditor-content) {
-  min-height: 0;
-}
-
 .vditor-shell.mode-preview {
   overflow: auto;
   padding: 28px;
@@ -296,8 +285,22 @@ defineExpose({
   padding: 24px 32px 80px;
   line-height: 1.75;
 }
+</style>
 
-.vditor-preview-body :deep(img) {
+<style>
+/* 第三方编辑器 DOM 不带 scoped attribute，用组件根类限定，避免 :deep */
+.vditor-shell .vditor {
+  width: 100% !important;
+  height: 100% !important;
+  border: 0;
+  border-radius: 0;
+}
+
+.vditor-shell .vditor-content {
+  min-height: 0;
+}
+
+.vditor-preview-body img {
   max-width: 100%;
 }
 </style>

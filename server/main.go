@@ -40,13 +40,14 @@ import (
 )
 
 type app struct {
-	db        *sql.DB
-	dataDir   string
-	docsDir   string
-	uploadDir string
-	jwtSecret []byte
-	pending   map[string]PendingLogin
-	mu        sync.RWMutex
+	db          *sql.DB
+	dataDir     string
+	docsDir     string
+	uploadDir   string
+	versionsDir string
+	jwtSecret   []byte
+	pending     map[string]PendingLogin
+	mu          sync.RWMutex
 }
 
 type User struct {
@@ -167,7 +168,8 @@ func main() {
 func newApp(dataDir string) (*app, error) {
 	docsDir := filepath.Join(dataDir, "docs")
 	uploadDir := filepath.Join(dataDir, "uploads")
-	for _, dir := range []string{dataDir, docsDir, uploadDir, filepath.Join(dataDir, "backups")} {
+	versionsDir := filepath.Join(dataDir, "versions")
+	for _, dir := range []string{dataDir, docsDir, uploadDir, versionsDir, filepath.Join(dataDir, "backups")} {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return nil, err
 		}
@@ -182,11 +184,12 @@ func newApp(dataDir string) (*app, error) {
 	}
 
 	a := &app{
-		db:        db,
-		dataDir:   dataDir,
-		docsDir:   docsDir,
-		uploadDir: uploadDir,
-		pending:   map[string]PendingLogin{},
+		db:          db,
+		dataDir:     dataDir,
+		docsDir:     docsDir,
+		uploadDir:   uploadDir,
+		versionsDir: versionsDir,
+		pending:     map[string]PendingLogin{},
 	}
 	if err := a.migrate(); err != nil {
 		return nil, err
@@ -259,6 +262,19 @@ func (a *app) migrate() error {
 			value TEXT NOT NULL,
 			updated_at DATETIME NOT NULL
 		);`,
+		`CREATE TABLE IF NOT EXISTS document_versions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			document_id INTEGER NOT NULL,
+			version_no INTEGER NOT NULL,
+			title TEXT NOT NULL,
+			file_path TEXT NOT NULL,
+			content_bytes INTEGER NOT NULL DEFAULT 0,
+			created_by INTEGER,
+			created_at DATETIME NOT NULL,
+			UNIQUE(document_id, version_no)
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_document_versions_document_id
+			ON document_versions(document_id, version_no DESC);`,
 	}
 	for _, stmt := range schema {
 		if _, err := a.db.Exec(stmt); err != nil {
@@ -1349,8 +1365,22 @@ func (a *app) handleDocumentImport(w http.ResponseWriter, r *http.Request, user 
 }
 
 func (a *app) handleDocumentByID(w http.ResponseWriter, r *http.Request, user User) {
-	id, err := parseID(r.URL.Path, "/api/documents/")
-	if err != nil {
+	trimmed := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/documents/"), "/")
+	parts := strings.Split(trimmed, "/")
+	if len(parts) == 0 || parts[0] == "" {
+		notFound(w)
+		return
+	}
+	id, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil || id <= 0 {
+		notFound(w)
+		return
+	}
+	if len(parts) >= 2 && parts[1] == "versions" {
+		a.handleDocumentVersions(w, r, user, id, parts)
+		return
+	}
+	if len(parts) != 1 {
 		notFound(w)
 		return
 	}
@@ -1396,6 +1426,18 @@ func (a *app) handleDocumentByID(w http.ResponseWriter, r *http.Request, user Us
 		if title == "" {
 			badRequest(w, "文档标题不能为空")
 			return
+		}
+		oldBytes, err := os.ReadFile(filepath.Join(a.docsDir, doc.FilePath))
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			serverError(w, err)
+			return
+		}
+		oldContent := string(oldBytes)
+		if shouldSnapshotDocument(doc.Title, title, oldContent, req.Content) {
+			if err := a.createDocumentVersion(doc, oldContent, user.ID); err != nil {
+				serverError(w, err)
+				return
+			}
 		}
 		if err := os.WriteFile(filepath.Join(a.docsDir, doc.FilePath), []byte(req.Content), 0644); err != nil {
 			serverError(w, err)
@@ -2332,6 +2374,9 @@ func (a *app) purgeTrashItem(itemType string, id int64) (string, error) {
 				return "", err
 			}
 		}
+		if err := a.deleteDocumentVersions(id); err != nil {
+			return "", err
+		}
 		return fmt.Sprintf("文档“%s”已永久删除", doc.Title), nil
 	default:
 		return "", errors.New("回收站项目类型无效")
@@ -2345,19 +2390,22 @@ func (a *app) purgeFolderTree(id int64) error {
 			UNION ALL
 			SELECT f.id FROM folders f JOIN subtree s ON f.parent_id = s.id
 		)
-		SELECT file_path FROM documents WHERE folder_id IN (SELECT id FROM subtree)`,
+		SELECT id, file_path FROM documents WHERE folder_id IN (SELECT id FROM subtree)`,
 		id,
 	)
 	if err != nil {
 		return err
 	}
+	docIDs := make([]int64, 0)
 	filePaths := make([]string, 0)
 	for rows.Next() {
+		var docID int64
 		var filePath string
-		if err := rows.Scan(&filePath); err != nil {
+		if err := rows.Scan(&docID, &filePath); err != nil {
 			_ = rows.Close()
 			return err
 		}
+		docIDs = append(docIDs, docID)
 		if filePath != "" {
 			filePaths = append(filePaths, filePath)
 		}
@@ -2367,6 +2415,20 @@ func (a *app) purgeFolderTree(id int64) error {
 	}
 	tx, err := a.db.Begin()
 	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(
+		`WITH RECURSIVE subtree(id) AS (
+			SELECT id FROM folders WHERE id = ?
+			UNION ALL
+			SELECT f.id FROM folders f JOIN subtree s ON f.parent_id = s.id
+		)
+		DELETE FROM document_versions WHERE document_id IN (
+			SELECT id FROM documents WHERE folder_id IN (SELECT id FROM subtree)
+		)`,
+		id,
+	); err != nil {
+		_ = tx.Rollback()
 		return err
 	}
 	if _, err := tx.Exec(
@@ -2400,6 +2462,9 @@ func (a *app) purgeFolderTree(id int64) error {
 		if err := os.Remove(filepath.Join(a.docsDir, filePath)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
+	}
+	for _, docID := range docIDs {
+		_ = os.RemoveAll(filepath.Join(a.versionsDir, fmt.Sprintf("doc_%d", docID)))
 	}
 	return nil
 }

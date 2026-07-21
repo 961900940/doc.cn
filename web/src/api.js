@@ -166,6 +166,18 @@ export function saveDocument(id, payload) {
   })
 }
 
+export function listDocumentVersions(id) {
+  return api(`/api/documents/${id}/versions`)
+}
+
+export function getDocumentVersion(id, versionId) {
+  return api(`/api/documents/${id}/versions/${versionId}`)
+}
+
+export function restoreDocumentVersion(id, versionId) {
+  return api(`/api/documents/${id}/versions/${versionId}/restore`, { method: 'POST' })
+}
+
 export function deleteDocument(id) {
   return api(`/api/documents/${id}`, { method: 'DELETE' })
 }

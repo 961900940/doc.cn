@@ -69,6 +69,7 @@ SQLite + Markdown 文件 + 本地 uploads
 └── data/
     ├── app.db            # SQLite 数据库
     ├── docs/             # Markdown 正文
+    ├── versions/         # 文档历史版本
     ├── uploads/          # 图片和附件
     └── backups/          # 预留备份目录
 ```
@@ -77,6 +78,7 @@ SQLite + Markdown 文件 + 本地 uploads
 
 - `data/app.db`：用户、角色、文件夹、文档标题、排序、附件、系统配置等元数据
 - `data/docs/`：Markdown 文档正文，例如 `doc_1.md`
+- `data/versions/`：文档历史版本快照
 - `data/uploads/`：上传的图片和附件
 - `data/backups/`：预留备份目录
 
@@ -595,6 +597,7 @@ MFA 技术实现：
 文档编辑：
 
 - Markdown 文档创建、读取、保存、重命名
+- 文档历史版本：保存有变化时自动快照，可预览并恢复（每篇最多 50 个）
 - 编辑区支持 `Ctrl + S` / `Cmd + S` 快捷键保存
 - 双编辑器可选：默认「简洁编辑」（ByteMD），也可切换「可视化编辑」（Vditor）
 - 左上角项目名称旁可切换编辑器，选择会保存在浏览器本地
@@ -639,7 +642,7 @@ MFA 技术实现：
 
 中期增强：
 
-- [ ] 文档历史版本
+- [x] 文档历史版本
 - [ ] 自动保存草稿
 - [ ] 正文全文搜索
 - [ ] 标签

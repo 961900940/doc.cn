@@ -132,35 +132,6 @@ defineExpose({
   background: #fff;
 }
 
-.byte-md-shell :deep(.bytemd) {
-  position: absolute !important;
-  inset: 0 !important;
-  width: 100% !important;
-  height: 100% !important;
-  max-height: none !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-}
-
-.byte-md-shell :deep(.bytemd-body) {
-  height: calc(100% - 58px) !important;
-}
-
-.byte-md-shell :deep(.CodeMirror),
-.byte-md-shell :deep(.CodeMirror-scroll) {
-  height: 100% !important;
-  min-height: 100% !important;
-}
-
-.byte-md-shell.mode-edit :deep(.bytemd-preview) {
-  display: none;
-}
-
-.byte-md-shell.mode-edit :deep(.bytemd-editor) {
-  width: 100%;
-  border-right: 0;
-}
-
 .byte-md-shell.mode-preview {
   overflow: auto;
   padding: 28px;
@@ -198,8 +169,40 @@ defineExpose({
 .byte-md-viewer.preview-wide {
   max-width: clamp(1280px, 86%, 1880px);
 }
+</style>
 
-.byte-md-viewer :deep(img) {
+<style>
+/* 第三方编辑器 DOM 不带 scoped attribute，用组件根类限定，避免 :deep */
+.byte-md-shell .bytemd {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-height: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+}
+
+.byte-md-shell .bytemd-body {
+  height: calc(100% - 58px) !important;
+}
+
+.byte-md-shell .CodeMirror,
+.byte-md-shell .CodeMirror-scroll {
+  height: 100% !important;
+  min-height: 100% !important;
+}
+
+.byte-md-shell.mode-edit .bytemd-preview {
+  display: none;
+}
+
+.byte-md-shell.mode-edit .bytemd-editor {
+  width: 100%;
+  border-right: 0;
+}
+
+.byte-md-viewer img {
   max-width: 100%;
 }
 </style>
