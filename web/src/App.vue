@@ -37,6 +37,12 @@ import {
   loadEditorEngine,
   saveEditorEngine
 } from './editor/constants'
+import DocOutline from './editor/DocOutline.vue'
+import {
+  loadOutlineVisible,
+  parseOutline,
+  saveOutlineVisible
+} from './editor/outline'
 
 const ByteMdEditor = defineAsyncComponent(() => import('./editor/ByteMdEditor.vue'))
 const VditorEditor = defineAsyncComponent(() => import('./editor/VditorEditor.vue'))
@@ -98,6 +104,8 @@ const previewWidths = [
 ]
 const editorEngine = ref(loadEditorEngine())
 const editorEngineOptions = Object.values(EDITOR_ENGINES)
+const outlineVisible = ref(loadOutlineVisible())
+const activeOutlineId = ref('')
 const searchQuery = ref('')
 const searchResults = ref([])
 const searchLoading = ref(false)
@@ -114,10 +122,21 @@ const effectiveEditorMode = computed(() => (canEdit.value ? editorMode.value : '
 const currentEditorEngineMeta = computed(
   () => EDITOR_ENGINES[editorEngine.value] || EDITOR_ENGINES.bytemd
 )
+const outlineItems = computed(() => parseOutline(document.value?.content || ''))
 
 function setEditorEngine(engine) {
   editorEngine.value = saveEditorEngine(engine)
   ElMessage.success(`已切换为${EDITOR_ENGINES[editorEngine.value].label}`)
+}
+
+function toggleOutline() {
+  outlineVisible.value = !outlineVisible.value
+  saveOutlineVisible(outlineVisible.value)
+}
+
+function handleOutlineSelect(item) {
+  activeOutlineId.value = item.id
+  activeEditorRef.value?.scrollToHeading?.(item)
 }
 
 onMounted(async () => {
@@ -656,7 +675,7 @@ function importFileToFolder(node = null) {
   const folderId = node?.type === 'folder' ? node.id : 0
   const input = window.document.createElement('input')
   input.type = 'file'
-  input.accept = '.md,.markdown,.txt,.log,.csv,.html,.htm,.docx'
+  input.accept = '.md,.markdown,.txt,.log,.csv,.html,.htm,.docx,.doc,.pdf,.xls,.xlsx'
   input.onchange = async () => {
     const file = input.files?.[0]
     if (!file) return
@@ -889,6 +908,7 @@ function serializeTree(nodes) {
 
 async function openDocument(node) {
   document.value = await getDocument(node.id)
+  activeOutlineId.value = ''
   if (!canEdit.value) {
     editorMode.value = 'preview'
   }
@@ -1209,29 +1229,45 @@ function roleLabel(role) {
               />
               <input ref="fileInput" type="file" class="hidden-input" @change="insertUpload" />
               <el-tag v-if="!canEdit" type="info">只读</el-tag>
+              <el-button
+                :type="outlineVisible ? 'primary' : 'default'"
+                plain
+                :icon="'Menu'"
+                @click="toggleOutline"
+              >
+                大纲
+              </el-button>
               <el-button v-if="canEdit" :icon="'Upload'" @click="fileInput.click()">上传</el-button>
               <el-button v-if="canEdit" type="primary" :loading="saving" :icon="'Check'" @click="saveCurrent">保存</el-button>
             </div>
           </div>
 
-          <div class="editor-grid" :class="`mode-${effectiveEditorMode}`">
-            <ByteMdEditor
-              v-if="editorEngine === 'bytemd'"
-              ref="activeEditorRef"
-              v-model="document.content"
-              :mode="effectiveEditorMode"
-              :preview-width="previewWidth"
-              :readonly="!canEdit"
-              @save="saveCurrent"
-            />
-            <VditorEditor
-              v-else
-              ref="activeEditorRef"
-              v-model="document.content"
-              :mode="effectiveEditorMode"
-              :preview-width="previewWidth"
-              :readonly="!canEdit"
-              @save="saveCurrent"
+          <div class="editor-body">
+            <div class="editor-grid" :class="`mode-${effectiveEditorMode}`">
+              <ByteMdEditor
+                v-if="editorEngine === 'bytemd'"
+                ref="activeEditorRef"
+                v-model="document.content"
+                :mode="effectiveEditorMode"
+                :preview-width="previewWidth"
+                :readonly="!canEdit"
+                @save="saveCurrent"
+              />
+              <VditorEditor
+                v-else
+                ref="activeEditorRef"
+                v-model="document.content"
+                :mode="effectiveEditorMode"
+                :preview-width="previewWidth"
+                :readonly="!canEdit"
+                @save="saveCurrent"
+              />
+            </div>
+            <DocOutline
+              v-if="outlineVisible"
+              :items="outlineItems"
+              :active-id="activeOutlineId"
+              @select="handleOutlineSelect"
             />
           </div>
         </template>

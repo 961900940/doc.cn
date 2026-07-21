@@ -629,9 +629,18 @@ textarea {
   display: none;
 }
 
+.editor-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+  background: #fff;
+}
+
 .editor-grid {
   position: relative;
   flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
   width: 100%;
   overflow: hidden;
@@ -804,8 +813,23 @@ textarea {
     flex-wrap: wrap;
   }
 
+  .editor-body {
+    position: relative;
+  }
+
   .editor-grid {
     grid-template-columns: 1fr;
+  }
+
+  .editor-body :deep(.doc-outline) {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 5;
+    width: min(240px, 78vw);
+    min-width: 0;
+    box-shadow: -8px 0 24px rgb(29 36 51 / 10%);
   }
 
   .overview-page {

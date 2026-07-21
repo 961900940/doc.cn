@@ -144,8 +144,11 @@ data/
 - 文件夹下新建子文件夹
 - 文件夹下新建文档
 - 文件夹和根节点支持导入文件，导入后自动创建 Markdown 文档
-- 导入支持 `.md`、`.markdown`、`.txt`、`.log`、`.csv`、`.html`、`.htm`、`.docx`
-- 暂不支持 PDF、旧版 `.doc`、Excel 自动转 Markdown，会返回明确提示
+- 导入支持 `.md`、`.markdown`、`.txt`、`.log`、`.csv`、`.html`、`.htm`、`.docx`、`.doc`、`.pdf`、`.xls`、`.xlsx`
+- PDF / Excel / 旧版 `.doc`（含 RTF）支持自动转 Markdown；扫描版 PDF 或复杂二进制格式可能失败并给出明确提示
+- PDF 导入默认用内置纯 Go 库（`ledongthuc/pdf` + 内嵌图提取），不依赖 Ghostscript；macOS PDFKit / Ghostscript 仅作整页预览增强
+- 图片型 PDF：macOS Vision OCR / 可选 Tesseract，导入「识别文本」（可编辑）+ 页面预览图
+- PDF 导入会过滤乱码文本，并保留原 PDF 下载链接
 - 左侧树拖拽排序
 - 文件夹和文档可以拖入文件夹，只有拖到文件夹中间区域才会进入文件夹
 - 文件夹重命名
@@ -473,7 +476,7 @@ go build -o doc-system .
 - Mermaid 渲染
 - 代码高亮
 - 文档大纲
-- PDF / Excel / 旧版 doc 导入转换
+- PDF / Excel / 旧版 doc 导入转换（已支持）
 - 自动保存草稿
 - 正文全文搜索
 - 标签
@@ -515,17 +518,17 @@ web/src/api.js
 如果要继续做最有价值的下一步，建议从这几个需求里选一个：
 
 ```text
-1. 文档大纲
-2. Docker Compose / systemd 部署
-3. 文档历史版本
-4. 正文全文搜索
-5. 上传文件大小和类型限制配置化
+1. Docker Compose / systemd 部署
+2. 文档历史版本
+3. 正文全文搜索
+4. 上传文件大小和类型限制配置化
+5. 自动保存草稿
 ```
 
 当前最推荐的下一步：
 
 ```text
-文档大纲，或 Docker Compose / systemd 部署
+Docker Compose / systemd 部署，或文档历史版本
 ```
 
-原因：双编辑器（简洁编辑 / 可视化编辑）与 Mermaid、代码高亮已补齐，下一步可继续补阅读导航或部署体验。
+原因：双编辑器、大纲，以及 PDF / Excel / 旧版 doc 导入转换已补齐，下一步可继续补部署体验或版本能力。

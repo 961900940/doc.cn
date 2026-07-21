@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { Editor, Viewer } from '@bytemd/vue-next'
 import breaks from '@bytemd/plugin-breaks'
 import gfm from '@bytemd/plugin-gfm'
@@ -19,6 +19,7 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue', 'save'])
 
+const shellRef = ref(null)
 const plugins = [breaks(), gfm(), highlight(), mermaid()]
 
 const showEditor = computed(() => !props.readonly && props.mode !== 'preview')
@@ -48,6 +49,42 @@ function handleKeydown(event) {
   }
 }
 
+function scrollPreviewHeading(item) {
+  const root = shellRef.value
+  if (!root) return false
+  const containers = [...root.querySelectorAll('.bytemd-preview, .byte-md-viewer')].filter((el) => {
+    const style = window.getComputedStyle(el)
+    return style.display !== 'none' && style.visibility !== 'hidden'
+  })
+  for (const container of containers) {
+    const headings = container.querySelectorAll('h1, h2, h3, h4, h5, h6')
+    const target = headings[item.index]
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      return true
+    }
+  }
+  return false
+}
+
+function scrollSourceHeading(item) {
+  const root = shellRef.value
+  if (!root) return false
+  const cmHost = root.querySelector('.CodeMirror')
+  const cm = cmHost?.CodeMirror
+  if (!cm) return false
+  cm.focus()
+  cm.setCursor({ line: item.lineIndex, ch: 0 })
+  cm.scrollIntoView({ line: item.lineIndex, ch: 0 }, 100)
+  return true
+}
+
+function scrollToHeading(item) {
+  if (!item) return
+  if (props.mode !== 'edit' && scrollPreviewHeading(item)) return
+  scrollSourceHeading(item)
+}
+
 onMounted(() => {
   window.addEventListener('keydown', handleKeydown)
 })
@@ -59,12 +96,13 @@ onUnmounted(() => {
 defineExpose({
   insertMarkdown(snippet) {
     emit('update:modelValue', `${props.modelValue || ''}\n\n${snippet}\n`)
-  }
+  },
+  scrollToHeading
 })
 </script>
 
 <template>
-  <div class="byte-md-shell" :class="[`mode-${mode}`, { 'is-readonly': readonly }]">
+  <div ref="shellRef" class="byte-md-shell" :class="[`mode-${mode}`, { 'is-readonly': readonly }]">
     <Editor
       v-if="showEditor"
       :value="modelValue"

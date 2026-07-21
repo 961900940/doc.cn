@@ -1331,7 +1331,7 @@ func (a *app) handleDocumentImport(w http.ResponseWriter, r *http.Request, user 
 		return
 	}
 	title := documentTitleFromFilename(header.Filename)
-	content, err := convertImportToMarkdown(header.Filename, data)
+	content, err := a.convertImportToMarkdown(header.Filename, data, user.ID)
 	if err != nil {
 		badRequest(w, err.Error())
 		return
@@ -1844,7 +1844,7 @@ func documentTitleFromFilename(filename string) string {
 	return name
 }
 
-func convertImportToMarkdown(filename string, data []byte) (string, error) {
+func (a *app) convertImportToMarkdown(filename string, data []byte, userID int64) (string, error) {
 	title := documentTitleFromFilename(filename)
 	ext := strings.ToLower(filepath.Ext(filename))
 	switch ext {
@@ -1885,13 +1885,27 @@ func convertImportToMarkdown(filename string, data []byte) (string, error) {
 		}
 		return "# " + title + "\n\n" + content + "\n", nil
 	case ".doc":
-		return "", errors.New("暂不支持旧版 .doc 格式，请先另存为 .docx 后再导入")
+		content, err := docLegacyToMarkdown(data)
+		if err != nil {
+			return "", err
+		}
+		if strings.TrimSpace(content) == "" {
+			content = "_DOC 文件没有可导入的文本内容_"
+		}
+		return "# " + title + "\n\n" + content + "\n", nil
 	case ".pdf":
-		return "", errors.New("暂不支持 PDF 自动转 Markdown，建议先复制正文为 .txt 或 .md 后导入")
+		return a.pdfImportToMarkdown(title, filename, data, userID)
 	case ".xls", ".xlsx":
-		return "", errors.New("暂不支持 Excel 自动转 Markdown，建议先另存为 .csv 后导入")
+		content, err := excelToMarkdown(filename, data)
+		if err != nil {
+			return "", err
+		}
+		if strings.TrimSpace(content) == "" {
+			content = "_Excel 文件没有可导入的表格内容_"
+		}
+		return "# " + title + "\n\n" + content + "\n", nil
 	default:
-		return "", errors.New("暂不支持该文件格式，当前支持 md、txt、log、csv、html、docx")
+		return "", errors.New("暂不支持该文件格式，当前支持 md、txt、log、csv、html、docx、doc、pdf、xls、xlsx")
 	}
 }
 

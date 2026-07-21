@@ -572,7 +572,14 @@ MFA 技术实现：
 - 根节点下新建文件夹和文档
 - 文件夹下新建子文件夹和文档
 - 文件夹和根节点支持导入文件并转成 Markdown 文档
-- 导入支持 `.md`、`.markdown`、`.txt`、`.log`、`.csv`、`.html`、`.htm`、`.docx`
+- 导入支持 `.md`、`.markdown`、`.txt`、`.log`、`.csv`、`.html`、`.htm`、`.docx`、`.doc`、`.pdf`、`.xls`、`.xlsx`
+- PDF 提取正文文本（扫描件/加密件可能失败）
+- PDF 优先按页渲染为图片导入（保留文字/表格/图片版面），并附原 PDF 下载链接
+- PDF 默认用内置纯 Go 库提取文本/内嵌图片，**不依赖** Ghostscript；Windows 开箱可用
+- 图片型/扫描件 PDF：macOS 用系统 Vision OCR 识别可编辑文字；Windows/Linux 可安装 Tesseract（`chi_sim`）增强
+- 若环境有 PDFKit（macOS）或 Ghostscript，会额外生成整页预览（对照用）；正文优先「识别文本」
+- Excel 转 Markdown 表格（多工作表会按标题分段）
+- 旧版 `.doc` / RTF 尽量提取文本；复杂排版建议另存 `.docx`
 - 文件夹重命名
 - 删除文档 / 文件夹会先移入回收站
 - 删除文件夹时会提示影响范围，并连同子文件夹、子文档一起移入回收站
@@ -594,6 +601,8 @@ MFA 技术实现：
 - 编辑 / 分屏 / 预览模式切换
 - Markdown 预览
 - 预览模式支持窄屏、默认、宽屏三种阅读宽度
+- 文档大纲：根据 Markdown 标题自动生成，点击可跳转
+- 文档标题栏可开关大纲面板，偏好保存在本地
 - 图片和附件上传
 - 上传后自动插入 Markdown 链接
 - 内置 GFM、代码高亮与 Mermaid 支持（随所选编辑器）
@@ -625,8 +634,8 @@ MFA 技术实现：
 - [x] Markdown 编辑器升级为 Vditor 或 ByteMD（双编辑器可选，默认简洁编辑）
 - [x] Mermaid 渲染
 - [x] 代码高亮增强
-- [ ] 文档大纲
-- [ ] PDF / Excel / 旧版 doc 导入转换
+- [x] 文档大纲
+- [x] PDF / Excel / 旧版 doc 导入转换
 
 中期增强：
 

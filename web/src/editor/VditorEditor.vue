@@ -15,6 +15,7 @@ const emit = defineEmits(['update:modelValue', 'save'])
 
 const host = ref(null)
 const previewHost = ref(null)
+const shellRef = ref(null)
 let editor = null
 let syncing = false
 
@@ -178,12 +179,36 @@ defineExpose({
       return
     }
     emit('update:modelValue', `${props.modelValue || ''}\n\n${snippet}\n`)
+  },
+  scrollToHeading(item) {
+    if (!item) return
+    const root = shellRef.value
+    if (!root) return
+
+    const containers = root.querySelectorAll(
+      '.vditor-preview, .vditor-preview-body, .vditor-wysiwyg, .vditor-ir, .vditor-reset'
+    )
+    for (const container of containers) {
+      const headings = container.querySelectorAll('h1, h2, h3, h4, h5, h6')
+      const target = headings[item.index]
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        return
+      }
+    }
+
+    const sv = root.querySelector('.vditor-sv')
+    if (sv) {
+      const lineHeight = 22
+      sv.scrollTop = Math.max(0, item.lineIndex * lineHeight - 80)
+      editor?.focus()
+    }
   }
 })
 </script>
 
 <template>
-  <div class="vditor-shell" :class="[`mode-${mode}`, { 'is-readonly': readonly }]">
+  <div ref="shellRef" class="vditor-shell" :class="[`mode-${mode}`, { 'is-readonly': readonly }]">
     <div
       v-show="!readonly && mode !== 'preview'"
       ref="host"

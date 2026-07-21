@@ -3,6 +3,7 @@ module doc-system/server
 go 1.22
 
 require (
+	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	golang.org/x/crypto v0.26.0
 	modernc.org/sqlite v1.31.1
@@ -23,3 +24,5 @@ require (
 	modernc.org/strutil v1.2.0 // indirect
 	modernc.org/token v1.1.0 // indirect
 )
+
+replace github.com/ledongthuc/pdf => ../third_party/pdf
