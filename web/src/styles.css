@@ -761,6 +761,7 @@ textarea {
 }
 
 .overview-page,
+.folder-dashboard,
 .empty-state {
   flex: 1 1 auto;
   min-height: 0;
@@ -771,6 +772,203 @@ textarea {
   overflow: auto;
   padding: 32px 42px 80px;
   background: #fff;
+}
+
+.folder-dashboard {
+  min-width: 0;
+  overflow: auto;
+  padding: 36px 42px 72px;
+  background:
+    radial-gradient(circle at top left, rgb(59 130 246 / 8%), transparent 34%),
+    linear-gradient(180deg, #f8fafc 0%, #fff 42%);
+}
+
+.folder-dashboard-hero {
+  max-width: 760px;
+  margin-bottom: 28px;
+}
+
+.folder-dashboard-kicker {
+  margin: 0 0 8px;
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.folder-dashboard-hero h1 {
+  margin: 0;
+  font-size: 30px;
+  line-height: 1.25;
+  color: #0f172a;
+}
+
+.folder-dashboard-hero p {
+  max-width: 640px;
+  margin: 12px 0 0;
+  color: #536079;
+  line-height: 1.75;
+}
+
+.folder-quick-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  max-width: 760px;
+  margin-bottom: 32px;
+}
+
+.folder-action-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  min-height: 92px;
+  padding: 18px 18px 16px;
+  border: 1px solid #dbe3f0;
+  border-radius: 14px;
+  background: rgb(255 255 255 / 92%);
+  box-shadow: 0 10px 28px rgb(15 23 42 / 4%);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.folder-action-card:hover {
+  border-color: #93c5fd;
+  transform: translateY(-1px);
+  box-shadow: 0 14px 32px rgb(37 99 235 / 10%);
+}
+
+.folder-action-card .el-icon {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  font-size: 22px;
+  color: #2563eb;
+}
+
+.folder-action-card span {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.folder-action-card strong {
+  color: #0f172a;
+  font-size: 15px;
+}
+
+.folder-action-card em {
+  color: #64748b;
+  font-style: normal;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.folder-readonly-tip {
+  max-width: 760px;
+  margin-bottom: 28px;
+  padding: 14px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.folder-contents {
+  max-width: 760px;
+}
+
+.folder-contents-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.folder-contents-header h2 {
+  margin: 0;
+  font-size: 16px;
+  color: #0f172a;
+}
+
+.folder-contents-header span {
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.folder-contents-list {
+  display: grid;
+  gap: 2px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.folder-content-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.folder-content-row + .folder-content-row {
+  border-top: 1px solid #eef2f7;
+}
+
+.folder-content-row:hover {
+  background: #f8fafc;
+}
+
+.folder-content-row .el-icon {
+  color: #64748b;
+  font-size: 16px;
+}
+
+.folder-content-row strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.folder-content-row em {
+  color: #94a3b8;
+  font-style: normal;
+  font-size: 12px;
+}
+
+.folder-danger-zone {
+  max-width: 760px;
+  margin-top: 28px;
+  padding-top: 18px;
+  border-top: 1px solid #eef2f7;
+}
+
+.folder-danger-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #dc2626;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.folder-danger-btn:hover {
+  color: #b91c1c;
 }
 
 .overview-hero {
@@ -937,6 +1135,14 @@ textarea {
 
   .overview-page {
     padding: 24px 18px 64px;
+  }
+
+  .folder-dashboard {
+    padding: 24px 18px 64px;
+  }
+
+  .folder-quick-actions {
+    grid-template-columns: 1fr;
   }
 
   .overview-hero {

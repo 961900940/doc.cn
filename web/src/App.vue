@@ -144,6 +144,19 @@ const currentEditorEngineMeta = computed(
   () => EDITOR_ENGINES[editorEngine.value] || EDITOR_ENGINES.bytemd
 )
 const outlineItems = computed(() => parseOutline(document.value?.content || ''))
+const showFolderDashboard = computed(
+  () => !document.value && activeNode.value?.type === 'folder'
+)
+const folderChildren = computed(() => {
+  const children = activeNode.value?.children || []
+  return children
+})
+const folderDocuments = computed(() =>
+  folderChildren.value.filter((item) => item.type === 'document')
+)
+const folderSubfolders = computed(() =>
+  folderChildren.value.filter((item) => item.type === 'folder')
+)
 
 function setEditorEngine(engine) {
   editorEngine.value = saveEditorEngine(engine)
@@ -707,7 +720,20 @@ async function refreshTree(selectRoot = false) {
   tree.value = await getTree()
   if (selectRoot || !activeNode.value) {
     activeNode.value = tree.value[0] || null
+    return
   }
+  const current = activeNode.value
+  const found = findTreeNode(tree.value, current.type, current.id)
+  activeNode.value = found || tree.value[0] || null
+}
+
+function findTreeNode(nodes, type, id) {
+  for (const node of nodes || []) {
+    if (node.type === type && node.id === id) return node
+    const child = findTreeNode(node.children || [], type, id)
+    if (child) return child
+  }
+  return null
 }
 
 async function createRootFolder() {
@@ -1138,6 +1164,15 @@ function showKnowledgeOverview() {
   return !document.value && (!activeNode.value || activeNode.value.type === 'root')
 }
 
+async function openFolderChild(node) {
+  activeNode.value = node
+  if (node.type === 'document') {
+    await openDocument(node)
+  } else {
+    document.value = null
+  }
+}
+
 function roleLabel(role) {
   const labels = {
     admin: '管理员（admin）',
@@ -1484,6 +1519,91 @@ function roleLabel(role) {
 ├── 部署运维
 ├── 接口文档
 └── 复盘总结</pre>
+          </section>
+        </div>
+
+        <div v-else-if="showFolderDashboard" class="folder-dashboard">
+          <section class="folder-dashboard-hero">
+            <p class="folder-dashboard-kicker">文件夹</p>
+            <h1>{{ activeNode.title }}</h1>
+            <p>
+              在这里管理当前文件夹：新建文档、创建子文件夹、导入文件，或打开下方已有内容。
+            </p>
+          </section>
+
+          <section v-if="canEdit" class="folder-quick-actions">
+            <button type="button" class="folder-action-card" @click="createDoc(activeNode)">
+              <el-icon><DocumentAdd /></el-icon>
+              <span>
+                <strong>新建文档</strong>
+                <em>在此文件夹创建 Markdown 文档</em>
+              </span>
+            </button>
+            <button type="button" class="folder-action-card" @click="createChildFolder(activeNode)">
+              <el-icon><FolderAdd /></el-icon>
+              <span>
+                <strong>新建子文件夹</strong>
+                <em>继续细分目录结构</em>
+              </span>
+            </button>
+            <button type="button" class="folder-action-card" @click="importFileToFolder(activeNode)">
+              <el-icon><Upload /></el-icon>
+              <span>
+                <strong>导入文件</strong>
+                <em>支持 Markdown、Word、PDF、Excel 等</em>
+              </span>
+            </button>
+            <button type="button" class="folder-action-card" @click="renameNode(activeNode)">
+              <el-icon><Edit /></el-icon>
+              <span>
+                <strong>重命名</strong>
+                <em>修改当前文件夹名称</em>
+              </span>
+            </button>
+          </section>
+
+          <section v-else class="folder-readonly-tip">
+            当前为只读账号，可以浏览下方文档，但不能新建或修改内容。
+          </section>
+
+          <section class="folder-contents">
+            <div class="folder-contents-header">
+              <h2>本文件夹内容</h2>
+              <span>{{ folderChildren.length }} 项</span>
+            </div>
+
+            <div v-if="folderChildren.length" class="folder-contents-list">
+              <button
+                v-for="item in folderSubfolders"
+                :key="`folder-${item.id}`"
+                type="button"
+                class="folder-content-row"
+                @click="openFolderChild(item)"
+              >
+                <el-icon><Folder /></el-icon>
+                <strong>{{ item.title }}</strong>
+                <em>文件夹</em>
+              </button>
+              <button
+                v-for="item in folderDocuments"
+                :key="`document-${item.id}`"
+                type="button"
+                class="folder-content-row"
+                @click="openFolderChild(item)"
+              >
+                <el-icon><Document /></el-icon>
+                <strong>{{ item.title }}</strong>
+                <em>文档</em>
+              </button>
+            </div>
+            <el-empty v-else description="这个文件夹还是空的，可以从上方快捷操作开始" />
+          </section>
+
+          <section v-if="canEdit" class="folder-danger-zone">
+            <button type="button" class="folder-danger-btn" @click="removeNode(activeNode)">
+              <el-icon><Delete /></el-icon>
+              将此文件夹移入回收站
+            </button>
           </section>
         </div>
 
