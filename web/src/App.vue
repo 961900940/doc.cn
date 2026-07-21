@@ -1,5 +1,5 @@
 <script setup>
-import { computed, defineAsyncComponent, nextTick, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   changeMyPassword,
@@ -154,6 +154,11 @@ const saving = ref(false)
 const fileInput = ref(null)
 const mfaCodeInput = ref(null)
 const activeEditorRef = ref(null)
+const sidebarMinWidth = 220
+const sidebarMaxWidth = 560
+const sidebarWidth = ref(loadSidebarWidth())
+const sidebarCollapsed = ref(loadSidebarCollapsed())
+let sidebarResizing = false
 
 const appName = computed(() => appConfig.value.app_name || 'Doc System')
 const canEdit = computed(() => user.value?.role === 'admin' || user.value?.role === 'editor')
@@ -176,6 +181,71 @@ const folderDocuments = computed(() =>
 const folderSubfolders = computed(() =>
   folderChildren.value.filter((item) => item.type === 'folder')
 )
+const workspaceStyle = computed(() => ({
+  '--sidebar-width': `${sidebarWidth.value}px`
+}))
+
+function loadSidebarWidth() {
+  const saved = Number(window.localStorage.getItem('doc.sidebar.width'))
+  if (Number.isFinite(saved)) {
+    return clampSidebarWidth(saved)
+  }
+  return 300
+}
+
+function loadSidebarCollapsed() {
+  return window.localStorage.getItem('doc.sidebar.collapsed') === '1'
+}
+
+function clampSidebarWidth(width) {
+  return Math.min(sidebarMaxWidth, Math.max(sidebarMinWidth, Math.round(width)))
+}
+
+function saveSidebarState() {
+  window.localStorage.setItem('doc.sidebar.width', String(sidebarWidth.value))
+  window.localStorage.setItem('doc.sidebar.collapsed', sidebarCollapsed.value ? '1' : '0')
+}
+
+function setSidebarCollapsed(value) {
+  sidebarCollapsed.value = value
+  saveSidebarState()
+}
+
+function toggleSidebar() {
+  setSidebarCollapsed(!sidebarCollapsed.value)
+}
+
+function startSidebarResize(event) {
+  if (sidebarCollapsed.value || event.button !== 0) return
+  sidebarResizing = true
+  window.document.body.classList.add('is-resizing-sidebar')
+  window.addEventListener('pointermove', resizeSidebar)
+  window.addEventListener('pointerup', stopSidebarResize)
+  event.preventDefault()
+}
+
+function resizeSidebar(event) {
+  if (!sidebarResizing) return
+  sidebarWidth.value = clampSidebarWidth(event.clientX)
+}
+
+function stopSidebarResize() {
+  if (!sidebarResizing) return
+  sidebarResizing = false
+  window.document.body.classList.remove('is-resizing-sidebar')
+  window.removeEventListener('pointermove', resizeSidebar)
+  window.removeEventListener('pointerup', stopSidebarResize)
+  saveSidebarState()
+}
+
+function handleSidebarShortcut(event) {
+  const isComma = event.key === ',' || event.code === 'Comma'
+  const isMacShortcut = event.metaKey && event.altKey && isComma
+  const isOtherShortcut = event.ctrlKey && event.altKey && isComma
+  if (!isMacShortcut && !isOtherShortcut) return
+  event.preventDefault()
+  toggleSidebar()
+}
 
 function setEditorEngine(engine) {
   editorEngine.value = saveEditorEngine(engine)
@@ -193,6 +263,7 @@ function handleOutlineSelect(item) {
 }
 
 onMounted(async () => {
+  window.addEventListener('keydown', handleSidebarShortcut)
   await loadAppConfig()
   try {
     const status = await getSetupStatus()
@@ -215,6 +286,11 @@ onMounted(async () => {
   } catch {
     user.value = null
   }
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleSidebarShortcut)
+  stopSidebarResize()
 })
 
 async function submitSetup() {
@@ -1539,8 +1615,8 @@ function roleLabel(role) {
       </div>
     </header>
 
-    <section class="workspace">
-      <aside class="sidebar">
+    <section class="workspace" :class="{ 'is-sidebar-collapsed': sidebarCollapsed }" :style="workspaceStyle">
+      <aside class="sidebar" :aria-hidden="sidebarCollapsed">
         <div class="search-box sidebar-search">
           <el-input
             v-model="searchQuery"
@@ -1616,6 +1692,27 @@ function roleLabel(role) {
           </template>
         </el-tree>
       </aside>
+
+      <div class="sidebar-boundary" @pointerdown="startSidebarResize">
+        <el-tooltip effect="dark" placement="right" :show-after="80" :hide-after="0">
+          <template #content>
+            <div class="sidebar-toggle-tip">
+              <strong>{{ sidebarCollapsed ? '展开' : '收起' }}</strong>
+              <span>⌘+Option+,</span>
+            </div>
+          </template>
+          <button
+            type="button"
+            class="sidebar-toggle"
+            :aria-label="sidebarCollapsed ? '展开左侧菜单' : '收起左侧菜单'"
+            @pointerdown.stop
+            @click.stop="toggleSidebar"
+          >
+            <el-icon v-if="sidebarCollapsed"><ArrowRight /></el-icon>
+            <el-icon v-else><ArrowLeft /></el-icon>
+          </button>
+        </el-tooltip>
+      </div>
 
       <section class="editor-area">
         <template v-if="document">
