@@ -15,9 +15,13 @@ const emit = defineEmits(['update:modelValue', 'save'])
 
 const host = ref(null)
 const previewHost = ref(null)
+const previewWrapRef = ref(null)
 const shellRef = ref(null)
+const showBackTop = ref(false)
 let editor = null
 let syncing = false
+let scrollTarget = null
+let resizeObserver = null
 
 const vditorCdn = `${import.meta.env.BASE_URL}vditor`.replace(/\/$/, '')
 
@@ -42,10 +46,73 @@ async function customUpload(files) {
 }
 
 function destroyEditor() {
+  detachScrollTarget()
   if (editor) {
     editor.destroy()
     editor = null
   }
+}
+
+function getScrollableCandidates() {
+  const root = shellRef.value
+  if (!root) return []
+  if (props.readonly || props.mode === 'preview') {
+    return [root, previewWrapRef.value].filter(Boolean)
+  }
+  return [
+    root.querySelector('.vditor-sv'),
+    root.querySelector('.vditor-wysiwyg'),
+    root.querySelector('.vditor-ir'),
+    root.querySelector('.vditor-preview'),
+    root.querySelector('.vditor-content')
+  ].filter(Boolean)
+}
+
+function isScrollable(element) {
+  return element && element.scrollHeight - element.clientHeight > 8
+}
+
+function pickScrollTarget() {
+  const candidates = getScrollableCandidates()
+  return candidates.find(isScrollable) || candidates[0] || null
+}
+
+function updateBackTopState() {
+  const target = pickScrollTarget()
+  if (target !== scrollTarget) {
+    attachScrollTarget(target)
+    return
+  }
+  showBackTop.value = Boolean(target && isScrollable(target) && target.scrollTop > 180)
+}
+
+function detachScrollTarget() {
+  if (scrollTarget) {
+    scrollTarget.removeEventListener('scroll', updateBackTopState)
+    scrollTarget = null
+  }
+}
+
+function attachScrollTarget(target = pickScrollTarget()) {
+  detachScrollTarget()
+  scrollTarget = target
+  if (scrollTarget) {
+    scrollTarget.addEventListener('scroll', updateBackTopState, { passive: true })
+  }
+  showBackTop.value = Boolean(scrollTarget && isScrollable(scrollTarget) && scrollTarget.scrollTop > 180)
+}
+
+async function refreshBackTop() {
+  await nextTick()
+  requestAnimationFrame(() => {
+    attachScrollTarget()
+  })
+}
+
+function scrollBackToTop() {
+  const target = scrollTarget || pickScrollTarget()
+  if (!target) return
+  target.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
 async function createEditor() {
@@ -95,6 +162,7 @@ async function createEditor() {
       if (props.readonly) {
         editor?.disabled()
       }
+      refreshBackTop()
     },
     ctrlEnter: () => {},
     hint: {
@@ -125,6 +193,7 @@ async function renderPreviewOnly() {
       style: 'github'
     }
   })
+  await refreshBackTop()
 }
 
 async function mountCurrent() {
@@ -150,6 +219,7 @@ watch(
       syncing = true
       editor.setValue(value || '', true)
       syncing = false
+      refreshBackTop()
     }
   }
 )
@@ -163,12 +233,19 @@ watch(
 
 onMounted(async () => {
   await mountCurrent()
+  resizeObserver = new ResizeObserver(updateBackTopState)
+  if (shellRef.value) resizeObserver.observe(shellRef.value)
+  if (previewWrapRef.value) resizeObserver.observe(previewWrapRef.value)
+  window.addEventListener('resize', updateBackTopState)
 })
 
 onBeforeUnmount(() => {
   if (host.value) {
     host.value.removeEventListener('keydown', handleKeydown)
   }
+  window.removeEventListener('resize', updateBackTopState)
+  resizeObserver?.disconnect()
+  detachScrollTarget()
   destroyEditor()
 })
 
@@ -216,11 +293,22 @@ defineExpose({
     />
     <div
       v-show="readonly || mode === 'preview'"
+      ref="previewWrapRef"
       class="vditor-preview-wrap"
       :class="mode === 'preview' ? `preview-${previewWidth}` : ''"
     >
       <div ref="previewHost" class="vditor-reset vditor-preview-body" />
     </div>
+    <button
+      v-show="showBackTop"
+      type="button"
+      class="doc-back-top"
+      aria-label="回到顶部"
+      title="回到顶部"
+      @click="scrollBackToTop"
+    >
+      ↑
+    </button>
   </div>
 </template>
 
@@ -243,7 +331,7 @@ defineExpose({
 }
 
 .vditor-shell.mode-preview {
-  overflow: auto;
+  overflow: hidden;
   padding: 28px;
   background: #f5f7fb;
 }
@@ -262,6 +350,7 @@ defineExpose({
 .vditor-shell.mode-preview .vditor-preview-wrap {
   position: relative;
   width: 100%;
+  height: 100%;
   min-height: 100%;
   margin: 0 auto;
   border: 1px solid #dde3ee;
@@ -284,6 +373,28 @@ defineExpose({
 .vditor-preview-body {
   padding: 24px 32px 80px;
   line-height: 1.75;
+}
+
+.doc-back-top {
+  position: absolute;
+  right: 24px;
+  bottom: 24px;
+  z-index: 20;
+  width: 42px;
+  height: 42px;
+  border: 1px solid #d8e0ec;
+  border-radius: 50%;
+  background: #fff;
+  color: #1f6feb;
+  box-shadow: 0 10px 28px rgb(15 23 42 / 16%);
+  cursor: pointer;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.doc-back-top:hover {
+  border-color: #1f6feb;
+  background: #eff6ff;
 }
 </style>
 

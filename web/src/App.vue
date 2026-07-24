@@ -128,6 +128,7 @@ const myPasswordDialogVisible = ref(false)
 const myPasswordSaving = ref(false)
 const myPasswordForm = ref({ current_password: '', new_password: '', confirm_password: '' })
 const tree = ref([])
+const treeRef = ref(null)
 const activeNode = ref(null)
 const document = ref(null)
 const editorMode = ref('split')
@@ -181,6 +182,7 @@ const folderDocuments = computed(() =>
 const folderSubfolders = computed(() =>
   folderChildren.value.filter((item) => item.type === 'folder')
 )
+const currentTreeKey = computed(() => getTreeNodeKey(activeNode.value))
 const workspaceStyle = computed(() => ({
   '--sidebar-width': `${sidebarWidth.value}px`
 }))
@@ -940,11 +942,13 @@ async function refreshTree(selectRoot = false) {
   tree.value = await getTree()
   if (selectRoot || !activeNode.value) {
     activeNode.value = tree.value[0] || null
+    syncTreeCurrent()
     return
   }
   const current = activeNode.value
   const found = findTreeNode(tree.value, current.type, current.id)
   activeNode.value = found || tree.value[0] || null
+  syncTreeCurrent()
 }
 
 function findTreeNode(nodes, type, id) {
@@ -954,6 +958,20 @@ function findTreeNode(nodes, type, id) {
     if (child) return child
   }
   return null
+}
+
+function getTreeNodeKey(node) {
+  if (!node) return ''
+  if (node.key) return node.key
+  if (node.type && node.id !== undefined && node.id !== null) return `${node.type}-${node.id}`
+  return ''
+}
+
+function syncTreeCurrent() {
+  nextTick(() => {
+    if (!treeRef.value || !currentTreeKey.value) return
+    treeRef.value.setCurrentKey(currentTreeKey.value)
+  })
 }
 
 async function createRootFolder() {
@@ -1231,12 +1249,22 @@ function serializeTree(nodes) {
 }
 
 async function openDocument(node) {
-  document.value = await getDocument(node.id)
+  const docID = node?.id
+  if (!docID) return
+  const treeNode = findTreeNode(tree.value, 'document', docID)
+  activeNode.value = treeNode || {
+    ...node,
+    type: 'document',
+    key: getTreeNodeKey({ type: 'document', id: docID })
+  }
+  syncTreeCurrent()
+  document.value = await getDocument(docID)
   activeOutlineId.value = ''
   if (!canEdit.value) {
     editorMode.value = 'preview'
   }
   await nextTick()
+  syncTreeCurrent()
 }
 
 async function saveCurrent() {
@@ -1643,8 +1671,10 @@ function roleLabel(role) {
         <div v-else-if="searchCompleted" class="search-empty">未找到匹配标题</div>
 
         <el-tree
+          ref="treeRef"
           :data="tree"
           node-key="key"
+          :current-node-key="currentTreeKey"
           :props="{ label: 'title', children: 'children' }"
           default-expand-all
           highlight-current

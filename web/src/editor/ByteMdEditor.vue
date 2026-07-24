@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Editor, Viewer } from '@bytemd/vue-next'
 import breaks from '@bytemd/plugin-breaks'
 import gfm from '@bytemd/plugin-gfm'
@@ -20,7 +20,10 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue', 'save'])
 
 const shellRef = ref(null)
+const showBackTop = ref(false)
 const plugins = [breaks(), gfm(), highlight(), mermaid()]
+let scrollTarget = null
+let resizeObserver = null
 
 const showEditor = computed(() => !props.readonly && props.mode !== 'preview')
 const showViewer = computed(() => props.readonly || props.mode === 'preview')
@@ -47,6 +50,66 @@ function handleKeydown(event) {
     event.preventDefault()
     emit('save')
   }
+}
+
+function getScrollableCandidates() {
+  const root = shellRef.value
+  if (!root) return []
+  if (showViewer.value) {
+    return [root, root.querySelector('.byte-md-viewer')].filter(Boolean)
+  }
+  return [
+    root.querySelector('.CodeMirror-scroll'),
+    root.querySelector('.bytemd-preview'),
+    root.querySelector('.bytemd-body')
+  ].filter(Boolean)
+}
+
+function isScrollable(element) {
+  return element && element.scrollHeight - element.clientHeight > 8
+}
+
+function pickScrollTarget() {
+  const candidates = getScrollableCandidates()
+  return candidates.find(isScrollable) || candidates[0] || null
+}
+
+function updateBackTopState() {
+  const target = pickScrollTarget()
+  if (target !== scrollTarget) {
+    attachScrollTarget(target)
+    return
+  }
+  showBackTop.value = Boolean(target && isScrollable(target) && target.scrollTop > 180)
+}
+
+function detachScrollTarget() {
+  if (scrollTarget) {
+    scrollTarget.removeEventListener('scroll', updateBackTopState)
+    scrollTarget = null
+  }
+}
+
+function attachScrollTarget(target = pickScrollTarget()) {
+  detachScrollTarget()
+  scrollTarget = target
+  if (scrollTarget) {
+    scrollTarget.addEventListener('scroll', updateBackTopState, { passive: true })
+  }
+  showBackTop.value = Boolean(scrollTarget && isScrollable(scrollTarget) && scrollTarget.scrollTop > 180)
+}
+
+async function refreshBackTop() {
+  await nextTick()
+  requestAnimationFrame(() => {
+    attachScrollTarget()
+  })
+}
+
+function scrollBackToTop() {
+  const target = scrollTarget || pickScrollTarget()
+  if (!target) return
+  target.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
 function scrollPreviewHeading(item) {
@@ -87,11 +150,25 @@ function scrollToHeading(item) {
 
 onMounted(() => {
   window.addEventListener('keydown', handleKeydown)
+  refreshBackTop()
+  resizeObserver = new ResizeObserver(updateBackTopState)
+  if (shellRef.value) resizeObserver.observe(shellRef.value)
+  window.addEventListener('resize', updateBackTopState)
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
+  window.removeEventListener('resize', updateBackTopState)
+  resizeObserver?.disconnect()
+  detachScrollTarget()
 })
+
+watch(
+  () => [props.modelValue, props.mode, props.readonly],
+  () => {
+    refreshBackTop()
+  }
+)
 
 defineExpose({
   insertMarkdown(snippet) {
@@ -119,6 +196,16 @@ defineExpose({
       :value="modelValue"
       :plugins="plugins"
     />
+    <button
+      v-show="showBackTop"
+      type="button"
+      class="doc-back-top"
+      aria-label="回到顶部"
+      title="回到顶部"
+      @click="scrollBackToTop"
+    >
+      ↑
+    </button>
   </div>
 </template>
 
@@ -133,7 +220,7 @@ defineExpose({
 }
 
 .byte-md-shell.mode-preview {
-  overflow: auto;
+  overflow: hidden;
   padding: 28px;
   background: #f5f7fb;
 }
@@ -151,6 +238,7 @@ defineExpose({
 
 .byte-md-shell.mode-preview .byte-md-viewer {
   width: 100%;
+  height: 100%;
   min-height: 100%;
   margin: 0 auto;
   border: 1px solid #dde3ee;
@@ -168,6 +256,28 @@ defineExpose({
 
 .byte-md-viewer.preview-wide {
   max-width: clamp(1280px, 86%, 1880px);
+}
+
+.doc-back-top {
+  position: absolute;
+  right: 24px;
+  bottom: 24px;
+  z-index: 20;
+  width: 42px;
+  height: 42px;
+  border: 1px solid #d8e0ec;
+  border-radius: 50%;
+  background: #fff;
+  color: #1f6feb;
+  box-shadow: 0 10px 28px rgb(15 23 42 / 16%);
+  cursor: pointer;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.doc-back-top:hover {
+  border-color: #1f6feb;
+  background: #eff6ff;
 }
 </style>
 
