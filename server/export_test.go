@@ -27,6 +27,12 @@ func TestWriteKnowledgeBaseExport(t *testing.T) {
 		t.Fatalf("create folder: %v", err)
 	}
 	folderID, _ := res.LastInsertId()
+	if _, err := a.db.Exec(
+		`INSERT INTO folders (parent_id, name, sort_order, created_at, updated_at)
+		 VALUES (0, '空文件夹', 1, datetime('now'), datetime('now'))`,
+	); err != nil {
+		t.Fatalf("create empty folder: %v", err)
+	}
 	if _, err := a.createDocumentWithContent(folderID, "架构说明", "# 架构说明\n\nhello", 1); err != nil {
 		t.Fatalf("create document: %v", err)
 	}
@@ -43,7 +49,7 @@ func TestWriteKnowledgeBaseExport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("export: %v", err)
 	}
-	if stats.FolderCount != 1 || stats.DocumentCount != 1 || stats.UploadCount != 1 {
+	if stats.FolderCount != 2 || stats.DocumentCount != 1 || stats.UploadCount != 1 {
 		t.Fatalf("unexpected stats: %+v", stats)
 	}
 
@@ -66,6 +72,9 @@ func TestWriteKnowledgeBaseExport(t *testing.T) {
 	}
 	if !strings.Contains(entries["知识库/项目-A/架构说明.md"], "hello") {
 		t.Fatalf("missing exported markdown document, entries: %#v", entries)
+	}
+	if _, ok := entries["知识库/空文件夹/"]; !ok {
+		t.Fatalf("missing exported empty folder, entries: %#v", entries)
 	}
 	if entries["uploads/2026/07/demo.txt"] != "upload" {
 		t.Fatalf("missing exported upload, entries: %#v", entries)
@@ -92,6 +101,13 @@ func TestDocumentAndFolderExportFormats(t *testing.T) {
 		t.Fatalf("create folder: %v", err)
 	}
 	folderID, _ := res.LastInsertId()
+	if _, err := a.db.Exec(
+		`INSERT INTO folders (parent_id, name, sort_order, created_at, updated_at)
+		 VALUES (?, '空子目录', 1, datetime('now'), datetime('now'))`,
+		folderID,
+	); err != nil {
+		t.Fatalf("create empty child folder: %v", err)
+	}
 	docID, err := a.createDocumentWithContent(folderID, "接口说明", "# 接口说明\n\n- 登录接口\n\n`GET /api/me`", 1)
 	if err != nil {
 		t.Fatalf("create document: %v", err)
@@ -140,13 +156,19 @@ func TestDocumentAndFolderExportFormats(t *testing.T) {
 		t.Fatalf("open folder zip: %v", err)
 	}
 	found := false
+	foundEmptyDir := false
 	for _, file := range reader.File {
 		if strings.HasSuffix(file.Name, "接口说明.html") {
 			found = true
-			break
+		}
+		if file.Name == "导出测试/空子目录/" {
+			foundEmptyDir = true
 		}
 	}
 	if !found {
 		t.Fatalf("folder zip missing html document")
+	}
+	if !foundEmptyDir {
+		t.Fatalf("folder zip missing empty child folder")
 	}
 }

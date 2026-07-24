@@ -172,8 +172,8 @@ data/
 - 回收站恢复文档和文件夹
 - 回收站永久删除文档和文件夹
 - 操作日志：登录用户可查看；管理员看全部，其他用户仅看自己的记录；支持筛选
-- 管理员一键导出整套知识库 ZIP，包含 Markdown 文档、文件夹结构和本地上传附件
-- 单篇文档支持导出为 Markdown、HTML、PDF；单个文件夹支持按 Markdown、HTML、PDF 格式导出 ZIP
+- 管理员一键导出整套知识库 ZIP，包含 Markdown 文档、完整文件夹结构（包括空文件夹）和本地上传附件
+- 单篇文档支持导出为 Markdown、HTML、PDF；单个文件夹支持按 Markdown、HTML、PDF 格式导出 ZIP，并保留空子文件夹
 - Markdown 编辑
 - Markdown 预览
 - 编辑 / 分屏 / 预览模式切换

@@ -165,6 +165,10 @@ func (a *app) writeKnowledgeBaseExport(out io.Writer) (exportStats, error) {
 	zw := zip.NewWriter(out)
 	usedEntries := map[string]bool{}
 	folderPaths := exportFolderPaths(folders)
+	if err := addExportFolderDirs(zw, folderPaths, usedEntries, now); err != nil {
+		_ = zw.Close()
+		return stats, err
+	}
 
 	for _, doc := range documents {
 		folderPath := folderPaths[doc.FolderID]
@@ -254,6 +258,10 @@ func (a *app) renderFolderExport(folder Folder, format string) ([]byte, int, err
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	usedEntries := map[string]bool{}
+	if err := addFolderExportDirs(zw, folderIDs, folderPaths, rootParent, folder.Name, usedEntries, now); err != nil {
+		_ = zw.Close()
+		return nil, 0, err
+	}
 	count := 0
 	for _, doc := range documents {
 		if !folderIDs[doc.FolderID] {
@@ -299,6 +307,54 @@ func (a *app) renderFolderExport(folder Folder, format string) ([]byte, int, err
 		return nil, 0, err
 	}
 	return buf.Bytes(), count, nil
+}
+
+func addExportFolderDirs(zw *zip.Writer, folderPaths map[int64]string, usedEntries map[string]bool, modTime time.Time) error {
+	paths := make([]string, 0, len(folderPaths))
+	for _, folderPath := range folderPaths {
+		if folderPath == "" {
+			continue
+		}
+		paths = append(paths, folderPath)
+	}
+	sort.Strings(paths)
+	for _, folderPath := range paths {
+		if err := addZipDirWithParents(zw, folderPath, usedEntries, modTime); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func addFolderExportDirs(
+	zw *zip.Writer,
+	folderIDs map[int64]bool,
+	folderPaths map[int64]string,
+	rootParent string,
+	rootName string,
+	usedEntries map[string]bool,
+	modTime time.Time,
+) error {
+	paths := make([]string, 0, len(folderIDs))
+	for folderID := range folderIDs {
+		folderPath := folderPaths[folderID]
+		if folderPath == "" {
+			continue
+		}
+		relFolder := strings.TrimPrefix(folderPath, rootParent)
+		relFolder = strings.TrimPrefix(relFolder, "/")
+		if relFolder == "" || relFolder == "." {
+			relFolder = safeZipSegment(rootName)
+		}
+		paths = append(paths, relFolder)
+	}
+	sort.Strings(paths)
+	for _, folderPath := range paths {
+		if err := addZipDirWithParents(zw, folderPath, usedEntries, modTime); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (a *app) readDocumentContent(doc Document) (string, error) {
@@ -391,6 +447,35 @@ func addZipBytes(zw *zip.Writer, name string, data []byte, modTime time.Time) er
 	}
 	_, err = writer.Write(data)
 	return err
+}
+
+func addZipDirWithParents(zw *zip.Writer, name string, usedEntries map[string]bool, modTime time.Time) error {
+	name = strings.Trim(path.Clean(name), "/")
+	if name == "" || name == "." {
+		return nil
+	}
+	current := ""
+	for _, segment := range strings.Split(name, "/") {
+		if segment == "" || segment == "." {
+			continue
+		}
+		current = path.Join(current, segment)
+		entry := current + "/"
+		if usedEntries[entry] {
+			continue
+		}
+		header := &zip.FileHeader{
+			Name:   entry,
+			Method: zip.Store,
+		}
+		header.SetMode(os.ModeDir | 0755)
+		header.SetModTime(modTime)
+		if _, err := zw.CreateHeader(header); err != nil {
+			return err
+		}
+		usedEntries[entry] = true
+	}
+	return nil
 }
 
 func addZipFile(zw *zip.Writer, name string, filePath string, modTime time.Time) error {
