@@ -62,6 +62,8 @@ Go + SQLite + Markdown 文件 + Vue 3
 │   ├── go.mod
 │   ├── go.sum
 │   ├── main.go
+│   ├── defaults/
+│   │   └── templates/    # 系统内置 Markdown 模板，编译时打入 Go 二进制
 │   ├── doc-system        # 本地编译产物，已被 .gitignore 忽略
 │   └── public/           # 前端生产构建产物，已被 .gitignore 忽略
 ├── web/
@@ -90,6 +92,13 @@ data/
 │   └── doc_1/
 │       └── v1.md
 ├── uploads/
+├── templates/
+│   ├── project-architecture.md
+│   ├── api-doc.md
+│   ├── deploy-guide.md
+│   ├── incident-review.md
+│   ├── tech-solution.md
+│   └── work-review.md
 └── backups/
 ```
 
@@ -179,6 +188,7 @@ data/
 - 编辑 / 分屏 / 预览模式切换
 - 预览模式支持窄屏、默认、宽屏三种阅读宽度
 - 文档内容超过一屏并向下滚动后，右下角显示“回到顶部”按钮
+- 内置 Markdown 文档模板，启动时如果 `data/templates/` 为空会自动生成；已有模板不会覆盖；新建文档弹窗支持选择空白文档或模板
 - 图片和附件上传接口
 - 上传后插入 Markdown 链接
 - 标题搜索，搜索框位于左侧知识库树上方，搜索结果在左侧栏展示，无结果时显示空状态提示
@@ -214,7 +224,6 @@ data/
 - 文档历史版本
 - 正文全文搜索
 - 评论
-- 文档模板
 - Mermaid 渲染
 - 代码高亮增强
 - 自动保存
@@ -627,7 +636,8 @@ DOC_ADDR=:8080 DOC_DATA_DIR=../data ./doc-system
 - 自动保存草稿
 - 正文全文搜索
 - 标签
-- 文档模板
+- 内置文档模板和初始化自动生成（已支持）
+- 新建文档时选择空白或模板（已支持）
 
 ### P2：团队推广能力
 

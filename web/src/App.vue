@@ -17,9 +17,11 @@ import {
   getDocumentVersion,
   getSettings,
   getSetupStatus,
+  getTemplate,
   getTree,
   completeSetup,
   importDocument,
+  listTemplates,
   listDocumentVersions,
   listOperationLogs,
   listTrash,
@@ -120,6 +122,10 @@ const userFormVisible = ref(false)
 const userSaving = ref(false)
 const editingUser = ref(null)
 const userForm = ref({ username: '', password: '', nickname: '', role: 'editor' })
+const docDialogVisible = ref(false)
+const docSaving = ref(false)
+const docTargetNode = ref(null)
+const docForm = ref({ title: '', mode: 'blank', template: '' })
 const passwordDialogVisible = ref(false)
 const passwordSaving = ref(false)
 const passwordUser = ref(null)
@@ -129,6 +135,8 @@ const myPasswordSaving = ref(false)
 const myPasswordForm = ref({ current_password: '', new_password: '', confirm_password: '' })
 const tree = ref([])
 const treeRef = ref(null)
+const templates = ref([])
+const templatesLoading = ref(false)
 const activeNode = ref(null)
 const document = ref(null)
 const editorMode = ref('split')
@@ -183,6 +191,10 @@ const folderSubfolders = computed(() =>
   folderChildren.value.filter((item) => item.type === 'folder')
 )
 const currentTreeKey = computed(() => getTreeNodeKey(activeNode.value))
+const docTargetLabel = computed(() => {
+  if (docTargetNode.value?.type === 'folder') return docTargetNode.value.title
+  return '知识库根目录'
+})
 const workspaceStyle = computed(() => ({
   '--sidebar-width': `${sidebarWidth.value}px`
 }))
@@ -284,6 +296,7 @@ onMounted(async () => {
     user.value = await me()
     if (!user.value.must_change_password) {
       await refreshTree(true)
+      await loadTemplates()
     }
   } catch {
     user.value = null
@@ -333,6 +346,7 @@ async function finishLogin(nextUser) {
   mfaForm.value = { code: '' }
   if (!nextUser.must_change_password) {
     await refreshTree(true)
+    await loadTemplates()
   }
 }
 
@@ -409,6 +423,7 @@ function clearAppStateAfterLogout() {
   document.value = null
   activeNode.value = null
   tree.value = []
+  templates.value = []
   searchResults.value = []
   searchQuery.value = ''
   searchCompleted.value = false
@@ -941,6 +956,18 @@ async function refreshTree(selectRoot = false) {
   syncTreeCurrent()
 }
 
+async function loadTemplates() {
+  templatesLoading.value = true
+  try {
+    const result = await listTemplates()
+    templates.value = result.items || []
+  } catch (error) {
+    ElMessage.error(cleanError(error.message) || '加载文档模板失败')
+  } finally {
+    templatesLoading.value = false
+  }
+}
+
 function findTreeNode(nodes, type, id) {
   for (const node of nodes || []) {
     if (node.type === type && node.id === id) return node
@@ -959,8 +986,8 @@ function getTreeNodeKey(node) {
 
 function syncTreeCurrent() {
   nextTick(() => {
-    if (!treeRef.value || !currentTreeKey.value) return
-    treeRef.value.setCurrentKey(currentTreeKey.value)
+    if (!treeRef.value) return
+    treeRef.value.setCurrentKey(currentTreeKey.value || null)
   })
 }
 
@@ -991,12 +1018,46 @@ async function createDoc(node = null) {
     ElMessage.warning('只读用户不能创建文档')
     return
   }
-  const title = window.prompt('文档标题')
-  if (!title) return
-  const folderId = node?.type === 'folder' ? node.id : 0
-  const result = await createDocument(folderId, title)
-  await refreshTree()
-  await openDocument({ id: result.id, type: 'document', title })
+  docTargetNode.value = node
+  docForm.value = { title: '', mode: 'blank', template: '' }
+  docDialogVisible.value = true
+  if (!templates.value.length) {
+    await loadTemplates()
+  }
+}
+
+async function submitCreateDoc() {
+  if (!canEdit.value || docSaving.value) return
+  const title = docForm.value.title.trim()
+  if (!title) {
+    ElMessage.error('文档标题不能为空')
+    return
+  }
+  if (docForm.value.mode === 'template' && !docForm.value.template) {
+    ElMessage.error('请选择文档模板')
+    return
+  }
+  docSaving.value = true
+  try {
+    const folderId = docTargetNode.value?.type === 'folder' ? docTargetNode.value.id : 0
+    let content = `# ${title}\n`
+    if (docForm.value.mode === 'template') {
+      const template = await getTemplate(docForm.value.template)
+      content = (template.content || '').replaceAll('{{title}}', title)
+    }
+    const result = await createDocument(folderId, title)
+    if (content !== `# ${title}\n`) {
+      await saveDocument(result.id, { title, content })
+    }
+    docDialogVisible.value = false
+    await refreshTree()
+    await openDocument({ id: result.id, type: 'document', title })
+    ElMessage.success('文档已创建')
+  } catch (error) {
+    ElMessage.error(cleanError(error.message) || '创建文档失败')
+  } finally {
+    docSaving.value = false
+  }
 }
 
 function importFileToFolder(node = null) {
@@ -1967,6 +2028,49 @@ function roleLabel(role) {
           <span>选择或新建一篇文档</span>
         </div>
       </section>
+
+      <el-dialog v-model="docDialogVisible" title="新建文档" width="520px">
+        <el-form label-position="top" @submit.prevent="submitCreateDoc">
+          <el-form-item label="创建位置">
+            <el-input :model-value="docTargetLabel" disabled />
+          </el-form-item>
+          <el-form-item label="创建方式">
+            <el-radio-group v-model="docForm.mode">
+              <el-radio-button label="blank">新建空白文档</el-radio-button>
+              <el-radio-button label="template">使用现有模板</el-radio-button>
+            </el-radio-group>
+          </el-form-item>
+          <el-form-item v-if="docForm.mode === 'template'" label="文档模板">
+            <el-select
+              v-model="docForm.template"
+              class="full-width"
+              filterable
+              :loading="templatesLoading"
+              placeholder="请选择模板"
+            >
+              <el-option
+                v-for="item in templates"
+                :key="item.name"
+                :label="item.title"
+                :value="item.name"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="文档标题">
+            <el-input
+              v-model="docForm.title"
+              maxlength="80"
+              show-word-limit
+              autocomplete="off"
+              placeholder="请输入文档标题"
+            />
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="docDialogVisible = false">取消</el-button>
+          <el-button type="primary" :loading="docSaving" @click="submitCreateDoc">创建</el-button>
+        </template>
+      </el-dialog>
 
       <el-dialog v-model="historyDialogVisible" title="文档历史版本" width="920px" class="history-dialog">
         <div class="history-toolbar">

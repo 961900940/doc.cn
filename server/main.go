@@ -40,14 +40,15 @@ import (
 )
 
 type app struct {
-	db          *sql.DB
-	dataDir     string
-	docsDir     string
-	uploadDir   string
-	versionsDir string
-	jwtSecret   []byte
-	pending     map[string]PendingLogin
-	mu          sync.RWMutex
+	db           *sql.DB
+	dataDir      string
+	docsDir      string
+	uploadDir    string
+	versionsDir  string
+	templatesDir string
+	jwtSecret    []byte
+	pending      map[string]PendingLogin
+	mu           sync.RWMutex
 }
 
 type User struct {
@@ -149,6 +150,8 @@ func main() {
 	mux.HandleFunc("/api/users/", a.withAuth(a.handleUserByID))
 	mux.HandleFunc("/api/tree", a.withAuth(a.handleTree))
 	mux.HandleFunc("/api/tree/sort", a.withAuth(a.handleTreeSort))
+	mux.HandleFunc("/api/templates", a.withAuth(a.handleTemplates))
+	mux.HandleFunc("/api/templates/", a.withAuth(a.handleTemplates))
 	mux.HandleFunc("/api/folders", a.withAuth(a.handleFolders))
 	mux.HandleFunc("/api/folders/", a.withAuth(a.handleFolderByID))
 	mux.HandleFunc("/api/documents", a.withAuth(a.handleDocuments))
@@ -174,7 +177,8 @@ func newApp(dataDir string) (*app, error) {
 	docsDir := filepath.Join(dataDir, "docs")
 	uploadDir := filepath.Join(dataDir, "uploads")
 	versionsDir := filepath.Join(dataDir, "versions")
-	for _, dir := range []string{dataDir, docsDir, uploadDir, versionsDir, filepath.Join(dataDir, "backups")} {
+	templatesDir := filepath.Join(dataDir, "templates")
+	for _, dir := range []string{dataDir, docsDir, uploadDir, versionsDir, templatesDir, filepath.Join(dataDir, "backups")} {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return nil, err
 		}
@@ -189,12 +193,13 @@ func newApp(dataDir string) (*app, error) {
 	}
 
 	a := &app{
-		db:          db,
-		dataDir:     dataDir,
-		docsDir:     docsDir,
-		uploadDir:   uploadDir,
-		versionsDir: versionsDir,
-		pending:     map[string]PendingLogin{},
+		db:           db,
+		dataDir:      dataDir,
+		docsDir:      docsDir,
+		uploadDir:    uploadDir,
+		versionsDir:  versionsDir,
+		templatesDir: templatesDir,
+		pending:      map[string]PendingLogin{},
 	}
 	if err := a.migrate(); err != nil {
 		return nil, err
@@ -205,6 +210,9 @@ func newApp(dataDir string) (*app, error) {
 	}
 	a.jwtSecret = []byte(jwtSecret)
 	if err := a.ensureInitialSetup(); err != nil {
+		return nil, err
+	}
+	if err := a.ensureDefaultTemplates(); err != nil {
 		return nil, err
 	}
 	return a, nil

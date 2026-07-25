@@ -57,6 +57,8 @@ SQLite + Markdown 文件 + 本地 uploads
 │   ├── go.mod
 │   ├── go.sum
 │   ├── main.go
+│   ├── defaults/
+│   │   └── templates/    # 系统内置 Markdown 模板，编译时打入 Go 二进制
 │   ├── doc-system        # 后端编译产物
 │   └── public/           # 前端生产构建产物，由 make web-build 生成
 ├── web/
@@ -71,6 +73,7 @@ SQLite + Markdown 文件 + 本地 uploads
     ├── docs/             # Markdown 正文
     ├── versions/         # 文档历史版本
     ├── uploads/          # 图片和附件
+    ├── templates/        # 运行时文档模板，可按公司习惯修改
     └── backups/          # 预留备份目录
 ```
 
@@ -80,6 +83,7 @@ SQLite + Markdown 文件 + 本地 uploads
 - `data/docs/`：Markdown 文档正文，例如 `doc_1.md`
 - `data/versions/`：文档历史版本快照
 - `data/uploads/`：上传的图片和附件
+- `data/templates/`：文档模板，首次启动时如果目录为空会从内置模板自动生成
 - `data/backups/`：预留备份目录
 
 ## 如何启动
@@ -140,6 +144,8 @@ http://localhost:5173
 #### 4.首次安装向导怎么出现：
 
 如果 /path/to/doc.cn/data/app.db 里没有任何用户，打开页面后会进入首次安装向导。
+
+服务启动时会创建 `data/templates/`。如果该目录为空，会自动写入内置 Markdown 模板；如果已经有模板文件，则不会覆盖。
 
 如果你已有 data/app.db，说明系统已经初始化过，不会再出现向导。
 
@@ -367,7 +373,7 @@ DOC_ADDR=:8080 DOC_DATA_DIR=../data DOC_ADMIN_PASSWORD='Admin123!' ./doc-system
 密码：DOC_ADMIN_PASSWORD 的值
 ```
 
-已有系统升级部署时，只要原来的 data/app.db 还在，并且已有用户，就不会进入安装向导。
+已有系统升级部署时，只要原来的 data/app.db 还在，并且已有用户，就不会进入安装向导。服务启动时仍会检查 `data/templates/`：目录不存在或为空时自动生成内置模板；已有模板时不会覆盖。
 
 #### 8. 一个关键注意点
 当前后端静态目录写的是相对路径 public，所以线上运行时建议一定进入 server 目录再启动：
@@ -413,6 +419,7 @@ Doc System 当前已经可以作为团队内部知识库使用，重点能力如
 | Markdown 写作 | 支持编辑 / 分屏 / 预览、快捷键保存、长文回到顶部、文档大纲、代码高亮、Mermaid、图片和附件上传 |
 | 编辑器选择 | 默认 ByteMD 简洁编辑器，也可切换 Vditor 可视化编辑器 |
 | 文件导入 | 支持 Markdown、文本、HTML、Word、PDF、Excel 等文件导入并转换为 Markdown 内容 |
+| 文档模板 | 内置项目架构、接口、部署、故障复盘、技术方案、工作复盘模板；首次启动会自动落地到 `data/templates/`，新建文档时可选择空白或模板 |
 | 版本与恢复 | 保存文档时自动生成历史版本，支持预览恢复；删除进入回收站，可恢复或永久删除 |
 | 搜索入口 | 左侧知识库上方支持按文档标题搜索，快速定位文档 |
 | 用户和权限 | 支持管理员、编辑者、只读用户；权限同时在前端和后端拦截 |
@@ -452,7 +459,8 @@ docs/project-context.md
 - [ ] 自动保存草稿
 - [ ] 正文全文搜索
 - [ ] 标签
-- [ ] 文档模板
+- [x] 内置文档模板和初始化自动生成
+- [x] 新建文档时选择空白或模板
 - [x] 操作日志页面
 - [ ] 定时备份
 - [x] 一键导出整套知识库 ZIP

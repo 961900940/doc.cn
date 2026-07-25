@@ -138,6 +138,14 @@ export function getTree() {
   return api('/api/tree')
 }
 
+export function listTemplates() {
+  return api('/api/templates')
+}
+
+export function getTemplate(name) {
+  return api(`/api/templates/${encodeURIComponent(name)}`)
+}
+
 export function sortTree(tree) {
   return api('/api/tree/sort', {
     method: 'PUT',
