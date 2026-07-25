@@ -499,12 +499,7 @@ async function exportActiveFolder(format) {
 }
 
 function downloadURL(url) {
-  const link = window.document.createElement('a')
-  link.href = url
-  link.rel = 'noopener'
-  window.document.body.appendChild(link)
-  link.click()
-  window.document.body.removeChild(link)
+  window.location.assign(new URL(url, window.location.origin).toString())
 }
 
 async function loadOperationLogs() {
