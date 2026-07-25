@@ -11,16 +11,19 @@ export const EDITOR_ENGINES = {
   }
 }
 
-export const DEFAULT_EDITOR_ENGINE = 'bytemd'
+export const DEFAULT_EDITOR_ENGINE = 'vditor'
 export const EDITOR_ENGINE_STORAGE_KEY = 'doc-system-editor-engine'
 
 export function normalizeEditorEngine(value) {
-  return value === 'vditor' ? 'vditor' : 'bytemd'
+  if (value === 'bytemd') return 'bytemd'
+  if (value === 'vditor') return 'vditor'
+  return DEFAULT_EDITOR_ENGINE
 }
 
 export function loadEditorEngine() {
   try {
-    return normalizeEditorEngine(localStorage.getItem(EDITOR_ENGINE_STORAGE_KEY))
+    const saved = localStorage.getItem(EDITOR_ENGINE_STORAGE_KEY)
+    return saved === null ? DEFAULT_EDITOR_ENGINE : normalizeEditorEngine(saved)
   } catch {
     return DEFAULT_EDITOR_ENGINE
   }

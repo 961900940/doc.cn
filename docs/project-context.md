@@ -45,8 +45,8 @@ Go + SQLite + Markdown 文件 + Vue 3
 - Vue 3
 - Vite
 - Element Plus
-- ByteMD（简洁编辑，默认）
-- Vditor（可视化编辑，可选）
+- Vditor（可视化编辑，默认）
+- ByteMD（简洁编辑，可选）
 
 没有使用 MySQL。Markdown 正文不存数据库。
 
@@ -631,7 +631,7 @@ DOC_ADDR=:8080 DOC_DATA_DIR=../data ./doc-system
 - 文档历史版本（已支持：保存时快照、列表预览、一键恢复）
 - Mermaid 渲染（已支持）
 - 代码高亮（已支持）
-- 文档大纲（已支持）
+- 文档大纲（已支持，默认关闭）
 - PDF / Excel / 旧版 doc 导入转换（已支持）
 - 自动保存草稿
 - 正文全文搜索

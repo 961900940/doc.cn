@@ -54,10 +54,10 @@ export const OUTLINE_VISIBLE_STORAGE_KEY = 'doc-system-outline-visible'
 export function loadOutlineVisible() {
   try {
     const value = localStorage.getItem(OUTLINE_VISIBLE_STORAGE_KEY)
-    if (value === null) return true
+    if (value === null) return false
     return value !== '0'
   } catch {
-    return true
+    return false
   }
 }
 
