@@ -463,8 +463,7 @@ async function exportAllDocuments() {
   }
   exportLoading.value = true
   try {
-    const result = await exportKnowledgeBase()
-    downloadBlob(result.blob, result.filename || 'doc-system-export.zip')
+    downloadURL(exportKnowledgeBase())
     ElMessage.success('知识库导出已开始下载')
   } catch (error) {
     ElMessage.error(cleanError(error.message) || '导出失败')
@@ -477,8 +476,7 @@ async function exportCurrentDocument(format) {
   if (!document.value?.id) return
   exportLoading.value = true
   try {
-    const result = await exportDocumentFile(document.value.id, format)
-    downloadBlob(result.blob, result.filename || `${document.value.title}.${format}`)
+    downloadURL(exportDocumentFile(document.value.id, format))
     ElMessage.success('文档导出已开始下载')
   } catch (error) {
     ElMessage.error(cleanError(error.message) || '导出失败')
@@ -491,8 +489,7 @@ async function exportActiveFolder(format) {
   if (!activeNode.value?.id || activeNode.value.type !== 'folder') return
   exportLoading.value = true
   try {
-    const result = await exportFolderFile(activeNode.value.id, format)
-    downloadBlob(result.blob, result.filename || `${activeNode.value.title}.zip`)
+    downloadURL(exportFolderFile(activeNode.value.id, format))
     ElMessage.success('文件夹导出已开始下载')
   } catch (error) {
     ElMessage.error(cleanError(error.message) || '导出失败')
@@ -501,15 +498,13 @@ async function exportActiveFolder(format) {
   }
 }
 
-function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob)
+function downloadURL(url) {
   const link = window.document.createElement('a')
   link.href = url
-  link.download = filename
+  link.rel = 'noopener'
   window.document.body.appendChild(link)
   link.click()
   window.document.body.removeChild(link)
-  URL.revokeObjectURL(url)
 }
 
 async function loadOperationLogs() {
